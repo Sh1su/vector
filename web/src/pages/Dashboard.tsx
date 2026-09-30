@@ -9,6 +9,9 @@ import { fmtDate, fmtNumber } from '../lib/format'
 import { sourceInfo, useCurrent, useReadings } from '../lib/odometer'
 import { useApp, vehicleSubtitle } from '../lib/state'
 import { NewVehicleDialog } from './Vehicles'
+import { dueText, levelInfo, useDueStatus } from './Maintenance'
+import { useCostReport } from './Costs'
+import { fmtMoney, fmtRate } from '../lib/money'
 
 function monthStart() {
   const n = new Date()
@@ -27,13 +30,16 @@ export function DashboardPage() {
     enabled: !!vid, queryKey: ['odometer', vid, 'month-distance'],
     queryFn: () => api.get<Schemas['OdometerDistance']>(`/vehicles/${vid}/odometer/distance?from=${encodeURIComponent(monthStart().toISOString())}&to=${encodeURIComponent(new Date().toISOString())}`),
   }).data
+  const year = new Date().getFullYear()
+  const due = useDueStatus(vid).data?.items ?? []
+  const costs = useCostReport(vid, `${year}-01-01`, `${year}-12-31`).data
 
   if (!vehicle) {
     return (
       <>
         <Header title="Übersicht" />
         <main className="p-8">
-          <EmptyState icon="car" title="Willkommen bei Vectra" text="Lege dein erstes Fahrzeug an. Danach kannst du Kilometerstände erfassen; Tanken, Öl, Wartung und Kosten folgen."
+          <EmptyState icon="car" title="Willkommen bei Vectra" text="Lege dein erstes Fahrzeug an. Danach erfasst du Kilometerstände, Fahrten, Wartungen, Service und Kosten."
             action={<Button icon="plus" onClick={() => setOpen(true)}>Fahrzeug hinzufügen</Button>} />
         </main>
         <NewVehicleDialog open={open} onOpenChange={setOpen} />
@@ -43,11 +49,14 @@ export function DashboardPage() {
 
   const known = current && current.kind !== 'unknown' && current.meter_value
   const monthName = new Intl.DateTimeFormat('de-DE', { month: 'long' }).format(new Date())
+  const next = due.find((d) => d.level !== 'unknown') ?? due[0]
+  const cost = costs?.currencies[0]
+  const urgent = due.filter((d) => d.level === 'overdue' || d.level === 'due')
   const kpis: Kpi[] = [
     { icon: 'gauge', label: 'Kilometerstand', value: known ? `${fmtNumber(current.meter_value!.canonical / 1000)} km` : '–', note: known ? `Stand vom ${fmtDate(current.at, true)}` : 'Noch kein Stand erfasst', to: '/kilometer' },
     { icon: 'route', label: `Gefahren im ${monthName}`, value: month?.status === 'known' && month.distance ? `${fmtNumber(month.distance.canonical / 1000)} km` : '–', note: month?.status !== 'known' ? 'Zu wenige Messpunkte' : month.flags?.includes('confirmed_anomaly_in_range') ? 'enthält eine bestätigte Abweichung' : 'aus deinen Kilometerständen', to: '/kilometer' },
-    { icon: 'fuel', label: 'Ø Verbrauch', value: '–', note: 'Kraftstoff-Modul folgt', to: '/kraftstoff' },
-    { icon: 'oil', label: 'Ölverbrauch', value: '–', note: 'Öl-Modul folgt', to: '/oel' },
+    { icon: 'wrench', label: 'Nächste Wartung', value: next ? levelInfo[next.level].label : '–', note: next ? `${next.title} · ${dueText(next)}` : 'Keine Wartung geplant', to: '/wartung' },
+    { icon: 'euro', label: `Kosten ${year}`, value: cost ? fmtMoney(cost.running_total_minor, cost.currency) : '–', note: cost?.per_distance ? `${fmtRate(cost.per_distance.value, cost.currency)} je km` : 'Service und sonstige Kosten', to: '/kosten' },
   ]
 
   return (
@@ -56,10 +65,10 @@ export function DashboardPage() {
         actions={<Link to="/kilometer" className="inline-flex h-10 items-center gap-2 rounded-[12px] bg-teal px-4 text-sm font-semibold whitespace-nowrap text-ink"><Icon name="plus" size={18} />Kilometerstand erfassen</Link>} />
       <main className="flex min-h-0 flex-grow flex-col gap-5 overflow-y-auto px-8 py-6">
         <div className="flex items-center gap-3.5 rounded-[16px] bg-hero px-5 py-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ready text-ink"><Icon name="check" size={22} /></div>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink ${urgent.length ? 'bg-amber' : 'bg-ready'}`}><Icon name={urgent.length ? 'wrench' : 'check'} size={22} /></div>
           <div className="flex flex-grow flex-col gap-0.5">
-            <div className="font-display text-[19px] font-semibold text-paper">Dein Auto ist bereit für die nächste Fahrt.</div>
-            <div className="text-[13px] text-slate-300">{known ? `Letzter Stand ${fmtNumber(current.meter_value!.canonical / 1000)} km am ${fmtDate(current.at, true)}` : 'Erfasse den ersten Kilometerstand.'}</div>
+            <div className="font-display text-[19px] font-semibold text-paper">{urgent.length ? `${urgent.length === 1 ? 'Eine Wartung ist' : `${urgent.length} Wartungen sind`} fällig.` : 'Dein Auto ist bereit für die nächste Fahrt.'}</div>
+            <div className="text-[13px] text-slate-300">{urgent.length ? urgent.map((u) => u.title).join(', ') : known ? `Letzter Stand ${fmtNumber(current.meter_value!.canonical / 1000)} km am ${fmtDate(current.at, true)}` : 'Erfasse den ersten Kilometerstand.'}</div>
           </div>
         </div>
 
@@ -100,8 +109,8 @@ export function DashboardPage() {
               <CardTitle>Schnell erfassen</CardTitle>
               <div className="grid grid-cols-2 gap-2.5">
                 <Link to="/kilometer" className="flex h-16 items-center gap-2.5 rounded-[14px] border border-line bg-soft px-3.5 text-sm font-semibold text-text"><span className="text-link"><Icon name="gauge" size={22} /></span>km-Stand</Link>
-                {([['fuel', 'Tanken'], ['oil', 'Öl'], ['scan', 'Beleg']] as [IconName, string][]).map(([icon, label]) => (
-                  <div key={label} aria-disabled="true" title="Folgt in einer der nächsten Iterationen" className="flex h-16 items-center gap-2.5 rounded-[14px] border border-line px-3.5 text-sm font-semibold text-muted opacity-70"><Icon name={icon} size={22} />{label}</div>
+                {([['route', 'Fahrt', '/fahrten'], ['receipt', 'Service', '/service'], ['euro', 'Kosten', '/kosten']] as [IconName, string, string][]).map(([icon, label, to]) => (
+                  <Link key={label} to={to} className="flex h-16 items-center gap-2.5 rounded-[14px] border border-line bg-soft px-3.5 text-sm font-semibold text-text"><span className="text-link"><Icon name={icon} size={22} /></span>{label}</Link>
                 ))}
               </div>
             </Card>

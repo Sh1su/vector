@@ -8,6 +8,10 @@ import { DashboardPage } from './pages/Dashboard'
 import { VehiclesPage } from './pages/Vehicles'
 import { OdometerPage } from './pages/Odometer'
 import { ComingSoon } from './pages/ComingSoon'
+import { TripsPage } from './pages/Trips'
+import { MaintenancePage } from './pages/Maintenance'
+import { ServicePage } from './pages/Service'
+import { CostsPage } from './pages/Costs'
 
 function Shell() {
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me'), retry: false })
@@ -25,10 +29,10 @@ function Shell() {
             <Route index element={<DashboardPage />} />
             <Route path="fahrzeuge" element={<VehiclesPage />} />
             <Route path="kilometer" element={<OdometerPage />} />
-            <Route path="fahrten" element={<ComingSoon title="Fahrten" icon="route" iteration={3} />} />
-            <Route path="wartung" element={<ComingSoon title="Wartung" icon="wrench" iteration={2} />} />
-            <Route path="service" element={<ComingSoon title="Servicehistorie" icon="receipt" iteration={2} />} />
-            <Route path="kosten" element={<ComingSoon title="Kosten" icon="euro" iteration={2} />} />
+            <Route path="fahrten" element={<TripsPage />} />
+            <Route path="wartung" element={<MaintenancePage />} />
+            <Route path="service" element={<ServicePage />} />
+            <Route path="kosten" element={<CostsPage />} />
             <Route path="kraftstoff" element={<ComingSoon title="Kraftstoff" icon="fuel" iteration={2} />} />
             <Route path="oel" element={<ComingSoon title="Öl" icon="oil" iteration={2} />} />
             <Route path="dokumente" element={<ComingSoon title="Dokumente" icon="doc" iteration={3} />} />

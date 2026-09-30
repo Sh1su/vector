@@ -147,7 +147,7 @@ export function OdometerPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {delta !== null && !superseded && <span className={`tabular text-sm font-semibold ${delta < 0 ? 'text-warn' : 'text-ok'}`}>{delta >= 0 ? '+' : ''}{fmtNumber(delta)} km</span>}
-                  {canEdit && !superseded && (
+                  {canEdit && !superseded && r.source === 'manual' && (
                     <button type="button" onClick={() => setCorrecting(r)} aria-label="Korrigieren" className="flex h-9 w-9 items-center justify-center rounded-[10px] text-muted hover:bg-soft"><Icon name="edit" size={18} /></button>
                   )}
                 </div>
