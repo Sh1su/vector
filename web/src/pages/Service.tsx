@@ -10,6 +10,7 @@ import { browserTimeZone, fmtNumber } from '../lib/format'
 import { errorText, etagOf, fmtDay, fmtMoney, noonISO, parseMoney, parseNumber, today, toMoneyInput } from '../lib/money'
 import { useApp } from '../lib/state'
 import { useMaintenance } from './Maintenance'
+import { Attachments } from '../components/Attachments'
 
 type Entry = Schemas['ServiceEntry'] & { version: number; totals?: Schemas['ServiceTotals'] | null }
 
@@ -185,6 +186,8 @@ function EntryDialog({ vid, currency, entry, onClose }: { vid: string; currency:
           </fieldset>
         )}
         <Field label="Notiz" htmlFor="s-note"><input id="s-note" className={inputClass} value={f.note} onChange={set('note')} /></Field>
+        {entry ? <Attachments vid={vid} targetType="service_entry" targetId={entry.id} role="invoice" canEdit />
+          : <div className="text-xs text-muted">Rechnungen und Fotos kannst du nach dem Speichern anhängen.</div>}
         {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
         {anomalies && <PlausibilityAlert anomalies={anomalies} busy={save.isPending} onEdit={() => setAnomalies(null)}
           onConfirm={(codes, r) => save.mutate({ confirm_anomalies: codes, anomaly_reason: r })} />}

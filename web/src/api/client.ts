@@ -42,6 +42,18 @@ export async function request<T>(method: string, path: string, body?: unknown, h
   return { data: json as T, etag: res.headers.get('ETag') }
 }
 
+/** Datei-Upload als multipart/form-data; Felder stehen vor der Datei (Server streamt die Datei). */
+export async function upload<T>(path: string, file: Blob, name: string, fields: Record<string, string> = {}): Promise<{ data: T; status: number }> {
+  const fd = new FormData()
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+  fd.append('file', file, name)
+  const res = await fetch('/api/v1' + path, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-CSRF-Token': csrfToken(), Accept: 'application/json' } })
+  const text = await res.text()
+  const json = text ? JSON.parse(text) : undefined
+  if (!res.ok) throw new ProblemError(json ?? { status: res.status, title: res.statusText, type: 'about:blank' })
+  return { data: json as T, status: res.status }
+}
+
 export const api = {
   get: <T,>(p: string) => request<T>('GET', p).then((r) => r.data),
   getWithETag: <T,>(p: string) => request<T>('GET', p),

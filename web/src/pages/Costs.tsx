@@ -8,6 +8,7 @@ import { Button, Card, CardTitle, Chip, EmptyState, Field, inputClass } from '..
 import { fmtNumber } from '../lib/format'
 import { errorText, etagOf, fmtDay, fmtMoney, fmtRate, parseMoney, parseNumber, today, toMoneyInput } from '../lib/money'
 import { useApp } from '../lib/state'
+import { Attachments } from '../components/Attachments'
 
 type CostEntry = Schemas['CostEntry'] & { version: number }
 type CostPlan = Schemas['CostPlan'] & { version: number }
@@ -201,6 +202,7 @@ function EntryDialog({ vid, currency, entry, onClose }: { vid: string; currency:
           <Field label="Gilt bis" htmlFor="e-to"><input id="e-to" type="date" className={inputClass} value={f.to} onChange={set('to')} /></Field>
         </div>
         <Field label="Notiz" htmlFor="e-note"><input id="e-note" className={inputClass} value={f.note} onChange={set('note')} /></Field>
+        {entry && <Attachments vid={vid} targetType="cost_entry" targetId={entry.id} role="receipt" canEdit />}
         {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
         <div className="flex flex-wrap justify-between gap-3">
           {entry ? <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => remove.mutate()}>Löschen</Button> : <span />}
