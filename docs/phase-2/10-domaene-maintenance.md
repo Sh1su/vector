@@ -101,14 +101,14 @@ Die **letzte** Erledigung einer Definition, sortiert nach `completed_on`, dann n
 ### MA-02 – Nächste Fälligkeit nach Zeit
 Basis `B` = `completed_on` der maßgeblichen Erledigung, ohne Erledigung `anchor_date`.
 - `from_last_completion`: `fällig_am = B + Intervall`.
-- `fixed_grid`: `fällig_am = anchor_date + k × Intervall` mit dem kleinsten *k* ≥ 1, für das `fällig_am > B` gilt (ohne Erledigung: *k* = 1). Das Raster läuft ab dem ursprünglichen Anker. Monatsenden verschieben sich deshalb nicht dauerhaft (siehe M-5).
+- `fixed_grid`: Rasterpunkte `g_k = anchor_date + k × Intervall` (k = 0, 1, 2, …). Die Erledigungen werden in ihrer Reihenfolge (MA-01) nacheinander ausgewertet. Jede Erledigung **deckt** den Rasterpunkt `g_c = max(nächster offener Rasterpunkt, größter Rasterpunkt ≤ Erledigungsdatum)`. Der nächste offene Rasterpunkt ist zu Beginn `g_1` und danach `g_(c+1)`. `fällig_am` = nächster offener Rasterpunkt nach der letzten Erledigung, ohne Erledigung `g_1`. Wird vorzeitig erledigt, deckt die Erledigung also den anstehenden Termin; wird sehr spät erledigt, springt das Raster auf den aktuellen Zeitraum. Das Raster läuft immer ab dem ursprünglichen Anker, Monatsenden verschieben sich deshalb nicht dauerhaft (siehe M-5, M-12).
 - **Monatsaddition:** Ist der Zieltag im Zielmonat nicht vorhanden, gilt der letzte Tag des Monats (31.01. + 1 Monat = 28.02. bzw. 29.02.).
 - `once`: `fällig_am = due_date_once`. Nach einer Erledigung ist die Definition **erledigt** und wird nicht mehr bewertet.
 
 ### MA-03 – Nächste Fälligkeit nach Distanz
 Basis `S` = `completed_total` der maßgeblichen Erledigung. Fehlt er, wird `ValueAt(completed_on 12:00)` aus Odometer verwendet (ODO-06). Ohne Erledigung gilt `anchor_total`.
 - `from_last_completion`: `fällig_bei = S + interval_distance`.
-- `fixed_grid`: `fällig_bei = anchor_total + k × interval_distance`, kleinstes *k* mit `fällig_bei > S`.
+- `fixed_grid`: wie MA-02 mit Rasterpunkten `anchor_total + k × interval_distance` und `completed_total` statt Datum. Zeit- und Distanzraster werden unabhängig voneinander ausgewertet.
 - `once`: `due_total_once`.
 - Alle Werte sind **Gesamtlaufleistung**. Ein Tachotausch verschiebt die Fälligkeit deshalb nicht (ADR-009).
 
@@ -166,6 +166,8 @@ Definition „Ölwechsel“: `from_last_completion`, 12 Monate / 15 000 km. Letz
 | M-8 | Serviceeintrag vom 12.03.2027 bei 60 400 km erledigt „Ölwechsel“ | neue Fälligkeit 12.03.2028 / 75 400 km. Das Löschen des Eintrags stellt M-1 wieder her. |
 | M-9 | HU: `from_last_completion`, 24 Monate, nur Zeit; überfällig seit 3 Monaten | bleibt `overdue` bis zur Erledigung (MA-08) |
 | M-10 | Tachotausch nach der Erledigung (Offset 130 000 km) | `fällig_bei` bleibt als Gesamtlaufleistung gleich. Die UI zeigt zusätzlich den Zählerwert des neuen Instruments. |
+| M-12 | `fixed_grid` 12 Monate / 15 000 km, Anker 01.04.2025 / 35 000 km (erster Termin 01.04.2026 / 50 000 km). Erledigung vorzeitig am 10.03.2026 bei 45 000 km | nächste Fälligkeit 01.04.2027 / 65 000 km (die Erledigung deckt den Termin 2026) |
+| M-13 | wie M-12, aber keine Erledigung bis 01.05.2028, dann Erledigung bei 83 000 km | gedeckt wird Rasterpunkt 01.04.2028 bzw. 80 000 km, nächste Fälligkeit 01.04.2029 / 95 000 km |
 | M-11 | nächste Wartung: Zeit-Definition in 30 Tagen `upcoming`, km-Definition Rest 1 000 km bei 50 km/Tag (≈ 20 Tage) `upcoming` | `NextDue` = km-Definition (gleiche Stufe, früheres geschätztes Datum) |
 
 ## 7. Abgleich mit Phase 1 (vorläufig)
@@ -181,7 +183,7 @@ Definition „Ölwechsel“: `from_last_completion`, 12 Monate / 15 000 km. Letz
 | BR-032 | überfällige Einträge werden beim Seitenaufruf verschoben | MA-08: keine automatische Fortschreibung | DROP |
 | BR-033 | Erledigung durch Einträge ohne gespeicherte Verknüpfung | SH-04 / MA-01 | FIX |
 | BR-034 | Deduplizierung nur im Speicher | MA-09 + ADR-020 persistent | FIX |
-| BR-053 | iCal-Export | nach MVP (`DueFeed`) | offen |
+| BR-053 | iCal-Export | nach MVP (`DueFeed`) | DROP |
 
 ## 8. Offene Punkte
 

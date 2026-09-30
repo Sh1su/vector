@@ -130,12 +130,12 @@ Beim Anlegen oder Ändern kann der Nutzer Wartungsdefinitionen desselben Fahrzeu
 | Phase 1 | Verhalten LubeLogger (Kurzform) | Vectra | Klasse |
 |---|---|---|---|
 | BR-033 | Erledigung schreibt Reminder vor dem Speichern fort, ohne Verknüpfung, bei jeder Bearbeitung erneut | SH-04: gespeicherte, idempotente Erledigung | FIX |
-| BR-036 (Teil) | ein Gesamtbetrag je Eintrag | Kostenpositionen Teile/Arbeit/Sonstiges | FIX |
+| BR-036 | Gesamtkosten als Summe der Einträge | Summenbildung bleibt (Costs, CO-03); neu sind Kostenpositionen Teile/Arbeit/Sonstiges | KEEP |
 | BR-042/BR-043 | Abbuchung und Rückbuchung aus dem Teilelager | Teilelager nicht im MVP (E-5) | DROP |
 | BR-044/BR-045 | Planer erzeugt Serviceeinträge | Planer nicht im MVP | DROP |
 | BR-046/BR-047 | Inspektions-Checklisten erzeugen Service-Kopien | Checklisten nicht im MVP; Inspektion ist Eintragsart `inspection`, keine Kopien | DROP |
 | BR-057 | Typwechsel über Kopieren und Löschen, ohne Transaktion | I-SH-4 Feldänderung | FIX |
-| BR-058 | Verweise auf andere Einträge als Anhang | Verknüpfungen zu Dokumenten (AP-4) | offen (AP-4) |
+| BR-058 | Verweise auf andere Einträge als Anhang | typisierte Verknüpfungen (DO, AP-4) | DROP |
 
 ## 9. Offene Punkte
 

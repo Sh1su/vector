@@ -36,7 +36,7 @@ Konventionen in den Formeln: `Δ` = gefahrene Distanz, `V` = Menge (Liter/Gallon
 - **Randfälle:** Tachorücksprung/Tippfehler → Δ = 0 ohne Warnung; fehlender Kilometerstand (0) → Δ = max(0, 0 − prev) = 0.
 - **Quelle:** `GasHelper.cs:160-166, 241-244` (Verbrenner), `68-72, 138-141` (EV).
 - **Status:** [VERIFIZIERT]
-- **Regressionstest:** (1000), (900), (1500) → Δ = 0, 0, 500 (Bezug ist der letzte Wert ≠ 0, also 900).
+- **Regressionstest:** (1000), (900), (1500) → Δ = 0, 0, 600 (Bezug ist der letzte Wert ≠ 0, also 900). *Erratum (Phase 2, AP-5): Die Erstfassung nannte 500; laut `GasHelper.cs:160-166, 241-244` wird `previousMileage` auch nach einem negativen Delta auf 900 gesetzt, das Ergebnis ist also 600.*
 
 ### BR-003 – Verbrauch bei Vollbetankung (Verbrenner)
 - **Beschreibung:** Verbrauch wird nur bei einer Vollbetankung mit Kilometerstand berechnet, unter Einbeziehung vorher akkumulierter Teilbetankungen (BR-004).

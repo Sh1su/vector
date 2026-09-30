@@ -163,8 +163,8 @@ Gibt der Nutzer Preis/Einheit (z. B. 1,799 €/l) und Menge (z. B. 55,20 l) ein,
 |---|---|---|---|
 | BR-001 | Sortierung nach Datum, dann Stand, dann Ladezustand | Ordnung nach Zeitpunkt (Übersicht §3.1) | FIX |
 | BR-002 | negative Deltas werden still zu 0 | Distanz aus Odometer, Anomalien vorher bestätigt, Intervall sonst nicht berechenbar | FIX |
-| BR-003/BR-004 | Vollbetankung + aufsummierte Teilbetankungen | FU-02 (gleiches Grundprinzip) | KEEP |
-| BR-003 (Randfall) | bei Menge/Distanz ≤ 0 gehen aufsummierte Teilmengen verloren | FU-03, keine stillen Verluste | FIX |
+| BR-003 | Vollbetankung + aufsummierte Teilbetankungen; bei Menge/Distanz ≤ 0 gehen Teilmengen verloren | FU-02 (gleiches Grundprinzip), FU-03 ohne stille Verluste | FIX |
+| BR-004 | Teilbetankungen aufsummieren | FU-02 | KEEP |
 | BR-005 | ausgelassener Vorgang setzt Berechnung zurück | FU-03 | KEEP |
 | BR-006 | erster Vorgang ohne Verbrauch | Anker ohne Verbrauch | KEEP |
 | BR-007 | Vorgang ohne Stand wird wie Teilbetankung aufsummiert | FU-02 | KEEP |
