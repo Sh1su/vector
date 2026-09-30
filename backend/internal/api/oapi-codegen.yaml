@@ -1,0 +1,9 @@
+# Codegenerierung aus der Spezifikation (ADR-014). Nicht von Hand ändern: api.gen.go.
+package: api
+generate:
+  chi-server: true
+  strict-server: true
+  models: true
+output-options:
+  nullable-type: true
+output: api.gen.go

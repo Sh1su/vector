@@ -1,0 +1,17 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: queries/identity.sql
+    gen:
+      go: {package: store, out: internal/identity/store, sql_package: pgx/v5, emit_json_tags: false}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/vehicles.sql
+    gen:
+      go: {package: store, out: internal/vehicles/store, sql_package: pgx/v5}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/odometer.sql
+    gen:
+      go: {package: store, out: internal/odometer/store, sql_package: pgx/v5}
