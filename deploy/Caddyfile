@@ -1,0 +1,6 @@
+# TLS automatisch (Let's Encrypt); HSTS setzt Caddy, alle übrigen Sicherheits-Header setzt Vectra (ADR-003).
+{$VECTRA_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy vectra:8080
+}

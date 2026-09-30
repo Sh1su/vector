@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // IANA-Zeitzonen im Binary (Image FROM scratch, ADR-008)
 
 	"github.com/google/uuid"
 

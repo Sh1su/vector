@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    name: API-Spezifikation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npx --yes @redocly/cli@latest lint api/openapi.yaml --config api/redocly.yaml
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: ci, POSTGRES_DB: vectra_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    defaults: { run: { working-directory: backend } }
+    env:
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25", cache-dependency-path: backend/go.sum }
+      - name: Generierter Code ist aktuell (oapi-codegen, sqlc)
+        run: |
+          go generate ./internal/api/...
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate
+          git diff --exit-code
+      - run: go vet ./...
+      - run: go test -race -p 1 ./...
+        env:
+          VECTRA_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/vectra_test
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - name: API-Typen sind aktuell
+        run: npm run gen:api && git diff --exit-code src/api/schema.d.ts
+      - name: Build mit Bundle-Budget (300 KB gzip)
+        run: npm run build
+
+  image:
+    name: Container-Image (Budget < 50 MB)
+    runs-on: ubuntu-latest
+    needs: [backend, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t vectra:ci .
+      - run: |
+          size=$(docker image inspect vectra:ci --format '{{.Size}}')
+          echo "Image: $((size/1024/1024)) MB"
+          test "$size" -lt 52428800

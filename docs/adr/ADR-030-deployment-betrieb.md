@@ -21,6 +21,9 @@ Vectra wird selbst gehostet: Docker Compose mit Caddy (Auftrag 5.2), Basis-Stack
 - Container laufen ohne Root, mit schreibgeschütztem Dateisystem (außer Datenvolumes) und ohne zusätzliche Capabilities.
 - PostgreSQL-Vorgaben für kleine Hosts: `shared_buffers` 128 MB, `max_connections` 30, Autovacuum aktiv.
 
+### Präzisierung Phase 3 (2026-09-30)
+Die statische Web-App liegt im selben Image wie das Backend und wird vom Backend ausgeliefert (`VECTRA_WEB_DIR`, lange Cache-Zeiten für `/assets/`). Caddy übernimmt nur TLS, HSTS, Kompression und das Weiterleiten. So bleibt es bei **einem** Anwendungs-Image, und Web und API haben immer dieselbe Version. Messwerte Iteration 1: Binary 13,9 MB, Image 5,5 MB komprimiert, 22,8 MiB Speicher im Container (schreibgeschützt, ohne Root, ohne Capabilities).
+
 ### Budgets (Messungen aus Spike S-1/S-5)
 | Ziel (Auftrag 5.3) | Messwert Spike | CI-Prüfung ab Phase 3 |
 |---|---|---|

@@ -1,0 +1,51 @@
+# Vectra Basis-Stack (ADR-030): PostgreSQL, Vectra, Caddy.
+# Start: cp .env.example .env && docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vectra
+      POSTGRES_USER: vectra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=30"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vectra -d vectra"]
+      interval: 10s
+      retries: 5
+
+  vectra:
+    image: ${VECTRA_IMAGE:-vectra:latest}
+    build:
+      context: ..
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      VECTRA_DATABASE_URL: postgres://vectra:${POSTGRES_PASSWORD}@postgres:5432/vectra
+      VECTRA_SETUP_TOKEN: ${VECTRA_SETUP_TOKEN:-}
+      VECTRA_COOKIE_SECURE: "true"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [vectra]
+    ports: ["80:80", "443:443"]
+    environment:
+      VECTRA_DOMAIN: ${VECTRA_DOMAIN:?VECTRA_DOMAIN fehlt}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
