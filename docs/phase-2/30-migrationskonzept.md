@@ -131,7 +131,7 @@ Einträge, die LubeLogger selbst fortgeschrieben hat (MG-11), sind echte Kostene
 | Quelle | Ziel | Regel |
 |---|---|---|
 | `Description` | `title` | Kategorie per Stichwort: HU, TÜV, MOT, AU, Inspection → `legal_inspection`; sonst `other` |
-| `Metric` (0 Datum, 1 Kilometer, 2 beides) | Auslöser Zeit / Distanz / beide | bei „nur Kilometer“ wird das (zufällige) Datum verworfen, und umgekehrt |
+| `Metric` (`Date`, `Odometer`, `Both`) | Auslöser Zeit / Distanz / beide | bei „nur Kilometer“ wird das (zufällige) Datum verworfen, und umgekehrt |
 | `IsRecurring = false` | `schedule_mode = once`, `due_date_once` / `due_odometer_once` | |
 | `IsRecurring = true`, `FixedIntervals = false` | `from_last_completion` | |
 | `IsRecurring = true`, `FixedIntervals = true` | `fixed_grid` | |
@@ -243,7 +243,7 @@ Vectra ist in Go geschrieben, LiteDB ist ein .NET-Format. Optionen, die in Spike
 - **B:** kleines Hilfswerkzeug auf Basis der LiteDB-Bibliothek (MIT-Lizenz, nicht LubeLogger), das die Datei nach JSON exportiert. Es läuft als optionaler Container nur während der Analyse.
 - **C:** Nutzer exportieren vorher mit LubeLogger selbst (nur CSV je Typ möglich, verlustbehaftet; Phase 1 08 §4) → ungeeignet.
 
-Die Entscheidung folgt aus dem Spike. Für das Konzept oben ist sie ohne Einfluss: Beide Optionen liefern dieselben Datensätze als JSON-Dokumente je Collection.
+**Entscheidung nach Spike S-4: Option A.** Ein Go-Leser mit ca. 250 Zeilen hat eine echte LubeLogger-v1.7.3-Datei exakt gelesen, auch Dezimalwerte, Unicode, mehrseitige Dokumente und Löschungen. Voraussetzung ist eine leere Log-Datei `cartracker-log.db`, also ein regulär beendetes LubeLogger. Sonst lehnt die Analyse mit Hinweis ab. Enum-Werte stehen als Namen in der Datei (Erratum zu MG-13); das Mapping verwendet Namen.
 
 ## 10. CSV-Import (allgemein)
 

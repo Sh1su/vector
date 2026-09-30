@@ -127,7 +127,7 @@ Nicht als CSV verfügbar: Reminder, Notizen, Inspektionen, Fahrzeuge, Benutzer. 
 | MG-10 | **Dateien** | Zuordnung nur über `Location`-Strings; dieselbe Datei kann mehrfach referenziert sein; unreferenzierte Dateien möglich; externe URLs; SHA-256 für Originale ist beim Import zu berechnen (Upload-Zeitpunkt unbekannt → als „importiert“ kennzeichnen). | [VERIFIZIERT] (Befund), Vorgehen [ABGELEITET] |
 | MG-11 | **Duplikate durch Automatiken** | Inspektionen erzeugen Service-Kopien, Plan-„Done“ erzeugt Records, wiederkehrende Gebühren erzeugen Folgeeinträge – beim Import nicht doppelt interpretieren (z. B. Kosten nicht doppelt zählen). | [VERIFIZIERT] |
 | MG-12 | **Extra-Fields** | Freie Name/Wert-Paare (Wert immer String); z. B. VIN, Reifengröße, Ölsorte – müssen auf Zielfelder gemappt oder als generische Attribute übernommen werden. | [VERIFIZIERT] (Struktur), typische Nutzung [UNKLAR] |
-| MG-13 | **Enums als Integer** | Werte sind Ordinalzahlen (z. B. `Metric: 2` = Both). | [ABGELEITET] |
+| MG-13 | **Enums** | ~~Werte sind Ordinalzahlen (z. B. `Metric: 2` = Both).~~ *Erratum (Phase 2, Spike S-4): In der LiteDB-Datei stehen Enum-Werte als **Namen** (z. B. `"Metric": "Date"`, `"ReminderMileageInterval": "FiveThousandMiles"`).* | [VERIFIZIERT] (ausgeführt, `docs/phase-2/40-spikes.md` S-4) |
 | MG-14 | **Kosten/Währung** | Keine Währung gespeichert; Serverkultur definiert Währung. | [VERIFIZIERT] |
 | MG-15 | **PG `vehicleId`-Drift** | Bei PG kann die Spalte `vehicleId` vom `data.VehicleId` abweichen (Update schreibt nur JSON, D-08). Für die Migration ist zu entscheiden, welche Quelle maßgeblich ist; Abweichungen sind als Anomalie zu melden. | [VERIFIZIERT] (Code) |
 

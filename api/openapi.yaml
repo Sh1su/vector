@@ -6845,9 +6845,10 @@ components:
             additionalProperties:
               type:
               - string
-              - number
-              - boolean
               - 'null'
+              maxLength: 1000
+            description: Werte als Text; Typ laut Felddefinition (Vehicles §2.5). Keine Mehrfachtypen, weil Codegeneratoren
+              sie nicht unterstützen (Spike S-2)
           note:
             type: string
             maxLength: 10000
@@ -7025,9 +7026,10 @@ components:
             additionalProperties:
               type:
               - string
-              - number
-              - boolean
               - 'null'
+              maxLength: 1000
+            description: Werte als Text; Typ laut Felddefinition (Vehicles §2.5). Keine Mehrfachtypen, weil Codegeneratoren
+              sie nicht unterstützen (Spike S-2)
           note:
             type: string
             maxLength: 10000
@@ -7174,9 +7176,10 @@ components:
             additionalProperties:
               type:
               - string
-              - number
-              - boolean
               - 'null'
+              maxLength: 1000
+            description: Werte als Text; Typ laut Felddefinition (Vehicles §2.5). Keine Mehrfachtypen, weil Codegeneratoren
+              sie nicht unterstützen (Spike S-2)
           note:
             type: string
             maxLength: 10000

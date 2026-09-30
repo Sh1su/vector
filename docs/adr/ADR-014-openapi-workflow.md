@@ -16,6 +16,11 @@ Der Auftrag verlangt spec-first mit OpenAPI 3.1 (5.2). Drei Clients sollen diese
 - **Sicherheit in der Spezifikation:** jede Operation deklariert Security-Schema und benötigte Scopes (ADR-016); die CI verweigert Operationen ohne Deklaration (deny-by-default).
 - **Veröffentlichung:** Die Spezifikation wird unter `/api/v1/openapi.json` ausgeliefert; eine API-Referenz ist optional im Web-Frontend.
 
+## Ergänzung nach Spike S-2 (2026-09-30)
+- `oapi-codegen` ab v2.8.0 mit `output-options.nullable-type: true` (Pflicht). Nur so bleiben bei JSON Merge Patch „fehlt“, `null` und Wert unterscheidbar.
+- Die Spezifikation verwendet keine Mehrfachtypen außer `[T, "null"]`; die CI prüft das.
+- `oapi-codegen` v2.8.0 verlangt Go ≥ 1.25.
+
 ## Konsequenzen
 - (+) Server und Clients driften nicht auseinander.
 - (−) Generator-Grenzen bei OpenAPI 3.1 (z. B. `oneOf`) müssen im Spike (AP-9) geprüft werden; Schemata werden bei Bedarf einfach gehalten.

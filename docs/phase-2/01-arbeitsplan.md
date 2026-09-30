@@ -35,7 +35,7 @@ Phase 2 liefert Entscheidungen und Spezifikationen für Vectra, **keinen Produkt
 | AP-6 | OpenAPI-3.1-Entwurf Kernressourcen | `api/openapi.yaml`, `api/README.md` (nur Spezifikation) | ✅ Entwurf, Lint grün |
 | AP-7 | Migrationskonzept LubeLogger → Vectra | `docs/phase-2/30-migrationskonzept.md` | ✅ Entwurf |
 | AP-8 | Betrieb, Notifications, Offline-Sync (021), Frontend-Design-System (022/023), i18n (028), Deployment/Backup (030) | `docs/adr/` | offen |
-| AP-9 | Spikes (Wegwerfcode, nicht im Produkt): Speicherbudget Go-Backend, LiteDB-Leser in Go, River/sqlc | `docs/phase-2/40-spikes.md` | offen |
+| AP-9 | Spikes (Wegwerfcode, nicht im Produkt): Speicherbudget Go-Backend, LiteDB-Leser in Go, River/sqlc | `docs/phase-2/40-spikes.md` | ✅ durchgeführt (S-6 Android offen) |
 | AP-10 | KI: Anbieter-Abstraktion (024), RAG/pgvector (025), Werkzeugschicht (026) | `docs/adr/` | offen |
 | AP-11 | Meldetext an LubeLogger-Maintainer (E-10) | `90-entwurf-meldung-lubelogger.md` | ✅ Entwurf |
 
