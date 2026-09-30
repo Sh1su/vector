@@ -186,9 +186,31 @@ func tooFast(a, b Reading, meter string, cfg Config) bool {
 
 func fmtValue(v int64, meter string) string {
 	if meter == MeterEngineHours {
-		return fmt.Sprintf("%.1f h", float64(v)/3600)
+		return groupDE(float64(v)/3600) + " h"
 	}
-	return fmt.Sprintf("%.1f km", float64(v)/1000)
+	return groupDE(float64(v)/1000) + " km"
+}
+
+// groupDE formatiert eine Zahl deutsch mit Tausenderpunkt und höchstens einer
+// Nachkommastelle (Meldungstexte; die API-Werte bleiben sprachunabhängig).
+func groupDE(f float64) string {
+	neg := f < 0
+	if neg {
+		f = -f
+	}
+	tenths := int64(math.Round(f * 10))
+	whole, frac := tenths/10, tenths%10
+	s := fmt.Sprint(whole)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "." + s[i:]
+	}
+	if frac != 0 {
+		s += "," + fmt.Sprint(frac)
+	}
+	if neg {
+		s = "-" + s
+	}
+	return s
 }
 
 // ValueKind beschreibt, wie ein Stand zu einem Zeitpunkt zustande kam (ODO-06).

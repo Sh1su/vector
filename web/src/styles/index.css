@@ -1,0 +1,99 @@
+/* Vectra Design-System (docs/phase-3/01-design-system.md), Werte aus der Vorlage „Vectra Brand“. */
+@import "tailwindcss";
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/poppins/latin-500.css";
+@import "@fontsource/poppins/latin-600.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --v-bg: #F8FAFC;
+  --v-card: #FFFFFF;
+  --v-text: #0F172A;
+  --v-muted: #64748B;
+  --v-border: #E2E8F0;
+  --v-soft: #F1F5F9;
+  --v-link: #0369A1;
+  --v-info-bg: #E0F2FE;
+  --v-ok: #047857;
+  --v-ok-bg: #D1FAE5;
+  --v-warn: #92400E;
+  --v-warn-bg: #FEF3C7;
+  --v-bad: #B91C1C;
+  --v-bad-bg: #FEE2E2;
+  --v-track: #E2E8F0;
+  --v-hero: #1E3A5F;
+  --v-sidebar: #1E3A5F;
+  --v-sidebar-edge: #1E3A5F;
+  --v-bar: #CBD5E1;
+}
+
+.dark {
+  --v-bg: #0F172A;
+  --v-card: #1E293B;
+  --v-text: #F8FAFC;
+  --v-muted: #94A3B8;
+  --v-border: #334155;
+  --v-soft: #172136;
+  --v-link: #38BDF8;
+  --v-info-bg: rgba(14, 165, 233, 0.16);
+  --v-ok: #34D399;
+  --v-ok-bg: rgba(16, 185, 129, 0.16);
+  --v-warn: #FBBF24;
+  --v-warn-bg: rgba(245, 158, 11, 0.16);
+  --v-bad: #F87171;
+  --v-bad-bg: rgba(239, 68, 68, 0.16);
+  --v-track: #334155;
+  --v-hero: #172A45;
+  --v-sidebar: #0B1526;
+  --v-sidebar-edge: #1E293B;
+  --v-bar: #334155;
+}
+
+@theme inline {
+  --color-bg: var(--v-bg);
+  --color-card: var(--v-card);
+  --color-text: var(--v-text);
+  --color-muted: var(--v-muted);
+  --color-line: var(--v-border);
+  --color-soft: var(--v-soft);
+  --color-link: var(--v-link);
+  --color-info-bg: var(--v-info-bg);
+  --color-ok: var(--v-ok);
+  --color-ok-bg: var(--v-ok-bg);
+  --color-warn: var(--v-warn);
+  --color-warn-bg: var(--v-warn-bg);
+  --color-bad: var(--v-bad);
+  --color-bad-bg: var(--v-bad-bg);
+  --color-hero: var(--v-hero);
+  --color-sidebar: var(--v-sidebar);
+  --color-sidebar-edge: var(--v-sidebar-edge);
+  --color-bar: var(--v-bar);
+}
+
+@theme {
+  --color-navy: #1E3A5F;
+  --color-teal: #0EA5E9;
+  --color-teal-soft: #7DD3FC;
+  --color-ready: #10B981;
+  --color-amber: #F59E0B;
+  --color-ink: #0F172A;
+  --color-paper: #F8FAFC;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Poppins", "Inter", system-ui, sans-serif;
+  --radius-card: 16px;
+  --radius-control: 12px;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--v-bg);
+  color: var(--v-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+.tabular { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid #0EA5E9; outline-offset: 2px; }

@@ -182,3 +182,11 @@ func TestEngineHoursJump(t *testing.T) {
 		t.Fatalf("2 h Betrieb in 1 h muss P3 sein: %v", as)
 	}
 }
+
+func TestGroupDE(t *testing.T) {
+	for in, want := range map[float64]string{145712: "145.712", 1234.5: "1.234,5", 999: "999", 0.04: "0", -12000: "-12.000"} {
+		if got := groupDE(in); got != want {
+			t.Errorf("%v: %q want %q", in, got, want)
+		}
+	}
+}

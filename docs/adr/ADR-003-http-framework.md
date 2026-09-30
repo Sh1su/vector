@@ -18,6 +18,9 @@ Option A. Regeln:
 - Keine Geschäftslogik in Handlern, keine zustandsändernden GET-Endpunkte (korrigiert T-06).
 - Serverseitig gerenderte Seiten gibt es nicht; das Web-Frontend ist eine statische SPA (Auftrag 5.2).
 
+## Präzisierung Phase 3 (2026-09-30)
+Die Content-Security-Policy erlaubt für **Styles** `'unsafe-inline'`. Radix-Dialoge fügen für die Scroll-Sperre zur Laufzeit ein `<style>`-Element ein, das ohne diese Freigabe blockiert wird (im Ende-zu-Ende-Test beobachtet). Für Skripte gilt weiterhin nur `'self'`, deshalb ist Inline-JavaScript weiterhin ausgeschlossen. Das Risiko von Inline-Styles ist deutlich geringer als das von Inline-Skripten und wird so akzeptiert.
+
 ## Konsequenzen
 - (+) Standardkonforme Handler, leicht testbar mit `httptest`.
 - (−) Validierung und Fehlerabbildung müssen über die generierte Schicht einheitlich verdrahtet werden (ADR-013).
