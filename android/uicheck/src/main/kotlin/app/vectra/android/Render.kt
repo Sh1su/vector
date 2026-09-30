@@ -13,7 +13,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import app.vectra.android.feature.CostsScreen
+import app.vectra.android.feature.CostsState
+import app.vectra.android.feature.DocumentsScreen
+import app.vectra.android.feature.DocumentsState
 import app.vectra.android.feature.HomeScreen
+import app.vectra.android.feature.MaintenanceScreen
+import app.vectra.android.feature.MaintenanceState
+import app.vectra.android.feature.ServiceScreen
+import app.vectra.android.feature.StartTripDialog
+import app.vectra.android.feature.TripsScreen
+import app.vectra.android.feature.TripsState
 import app.vectra.android.feature.HomeState
 import app.vectra.android.feature.LoginScreen
 import app.vectra.android.feature.LoginState
@@ -29,7 +39,23 @@ import app.vectra.android.feature.VehiclesState
 import app.vectra.android.ui.Tab
 import app.vectra.android.ui.TabBar
 import app.vectra.android.ui.VectraTheme
+import app.vectra.core.model.CostCurrencyReport
+import app.vectra.core.model.CostEntry
+import app.vectra.core.model.CostGroup
+import app.vectra.core.model.CostOccurrence
+import app.vectra.core.model.CostReport
+import app.vectra.core.model.DisplayValue
+import app.vectra.core.model.DistanceShare
+import app.vectra.core.model.DocumentMeta
+import app.vectra.core.model.DueStatus
+import app.vectra.core.model.Money
 import app.vectra.core.model.OdometerReading
+import app.vectra.core.model.QuantityInput
+import app.vectra.core.model.ServiceEntry
+import app.vectra.core.model.ServiceTotals
+import app.vectra.core.model.Trip
+import app.vectra.core.model.TripCategory
+import app.vectra.core.model.TripReport
 import app.vectra.core.model.OdometerValue
 import app.vectra.core.model.Quantity
 import app.vectra.core.model.Vehicle
@@ -65,6 +91,26 @@ private val p1 = ReadingDraft.toOutbox("v1", 142_900.0, "km", Instant.parse("202
 )
 private val offline = ReadingDraft.toOutbox("v1", 143_600.0, "km")
 
+private val due = listOf(
+    DueStatus("m1", "v1", "HU/AU", "due", "time", "2026-10-20", 20),
+    DueStatus("m2", "v1", "Ölwechsel", "upcoming", "distance", "2027-03-10", 161, distanceRemaining = DisplayValue(1300.0, "km")),
+    DueStatus("m3", "v1", "Bremsflüssigkeit", "ok", "time", "2027-06-01", 244),
+)
+private fun eur(v: Long) = Money(v, "EUR")
+private val services = listOf(
+    ServiceEntry("s1", 1, "2026-03-10T11:00:00Z", "Europe/Berlin", "inspection", "Inspektion 45.000 km", "EUR", QuantityInput(45000.0, "km"), "Autohaus Muster",
+        totals = ServiceTotals(eur(43250), eur(18000), eur(24000), eur(1250))),
+    ServiceEntry("s2", 1, "2025-11-02T11:00:00Z", "Europe/Berlin", "repair", "Bremsbeläge vorne", "EUR", QuantityInput(41200.0, "km"), "Eigenleistung",
+        totals = ServiceTotals(eur(8990), eur(8990), eur(0), eur(0))),
+)
+private val cats = listOf(TripCategory("c1", "Privat", "private"), TripCategory("c2", "Geschäftlich", "business", true), TripCategory("c3", "Arbeitsweg", "commute"))
+private val tripList = listOf(
+    Trip("t2", 1, "2026-09-02T10:00:00Z", "2026-09-02T10:30:00Z", "Europe/Berlin", QuantityInput(143400.0, "km"), QuantityInput(143420.0, "km"), "Büro", "Zuhause",
+        categoryId = "c3", distance = DisplayValue(20.0, "km"), gapBefore = DisplayValue(62.0, "km")),
+    Trip("t1", 1, "2026-09-01T06:00:00Z", "2026-09-01T06:45:00Z", "Europe/Berlin", QuantityInput(143300.0, "km"), QuantityInput(143338.0, "km"), "Berlin", "Potsdam",
+        "Kunde Müller", "c2", distance = DisplayValue(38.0, "km")),
+)
+
 @Composable
 private fun Phone(tab: Tab?, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize()) {
@@ -83,6 +129,17 @@ fun main(args: Array<String>) {
         "pending-dialog" to { PendingDialog(p1, {}, { _, _ -> }, {}, {}) },
         "vehicles" to { Phone(Tab.More) { VehiclesScreen(VehiclesState(listOf(golf, transit), mapOf("v1" to "143.520 km", "v2" to "88.210 km"), "v1", loading = false), {}, {}) } },
         "more" to { Phone(Tab.More) { MoreScreen {} } },
+        "maintenance" to { Phone(Tab.Maintenance) { MaintenanceScreen(MaintenanceState(golf, due, services, loading = false), {}, {}, {}) } },
+        "service" to { Phone(Tab.Maintenance) { ServiceScreen(MaintenanceState(golf, due, services, loading = false), {}, {}) } },
+        "costs" to { Phone(Tab.Costs) { CostsScreen(CostsState(golf, 2026, CostReport("2026-01-01", "2026-12-31", DisplayValue(8200.0, "km"), 273,
+            listOf(CostCurrencyReport("EUR", 103250, listOf(CostGroup("inspection", 43250), CostGroup("insurance", 60000)), DisplayValue(0.13, "EUR/km"), DisplayValue(3.78, "EUR/Tag")))),
+            listOf(CostOccurrence("p1", "2026-04-15", "open", eur(18000), "Kfz-Steuer")), 0,
+            listOf(CostEntry("e1", "insurance", "Versicherung 2026", "2026-01-02", eur(60000))), loading = false), {}, {}, {}) } },
+        "trips" to { Phone(Tab.Trips) { TripsScreen(TripsState(golf, tripList, cats, TripReport("2026-09-01", "2026-09-30", DisplayValue(58.0, "km"),
+            listOf(DistanceShare("c2", "Geschäftlich", DisplayValue(38.0, "km"), 1, 65.5), DistanceShare("c3", "Arbeitsweg", DisplayValue(20.0, "km"), 1, 34.5))), "September", loading = false), {}, {}, {}) } },
+        "trip-start" to { StartTripDialog(cats, 143_520.0, null, false, {}, { _, _, _, _, _ -> }) },
+        "documents" to { Phone(Tab.More) { DocumentsScreen(DocumentsState(golf, listOf(DocumentMeta("d1", 1, "invoice", "record", "Rechnung Inspektion März", "2026-03-10", "Autohaus Muster", listOf("f1")),
+            DocumentMeta("d2", 1, "registration", "other", "Zulassungsbescheinigung Teil I", null, null, listOf("f2", "f3"))), loading = false), {}, {}) } },
         "settings" to { Phone(Tab.More) { SettingsScreen(SettingsState("https://vectra.example.org", "Sam Beispiel", "sam@example.org", pendingCount = 2, clockSkewMinutes = 3, version = "0.1.0"), {}, {}, {}, {}) } },
     )
     for (dark in listOf(false, true)) {

@@ -3,7 +3,16 @@ package app.vectra.android
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import app.vectra.android.feature.Confirmation
+import app.vectra.android.feature.CostsState
+import app.vectra.android.feature.DocumentsState
+import app.vectra.android.feature.FormError
 import app.vectra.android.feature.Freshness
+import app.vectra.android.feature.MaintenanceState
+import app.vectra.android.feature.TripsState
 import app.vectra.android.feature.HomeState
 import app.vectra.android.feature.LoginState
 import app.vectra.android.feature.MonthBar
@@ -13,7 +22,27 @@ import app.vectra.android.feature.ThemeMode
 import app.vectra.android.feature.VehiclesState
 import app.vectra.android.sync.SyncWorker
 import app.vectra.android.ui.Tab
+import app.vectra.core.model.CompletionCreate
+import app.vectra.core.model.CostEntryCreate
+import app.vectra.core.model.CostItem
+import app.vectra.core.model.CostOccurrence
+import app.vectra.core.model.DocumentCreate
+import app.vectra.core.model.DueStatus
+import app.vectra.core.model.Money
+import app.vectra.core.model.QuantityInput
+import app.vectra.core.model.ServiceEntryCreate
+import app.vectra.core.model.Trip
+import app.vectra.core.model.TripFinish
+import app.vectra.core.model.TripStart
 import app.vectra.core.model.Vehicle
+import app.vectra.core.repo.VectraRepository
+import app.vectra.core.util.MoneyFormat
+import app.vectra.core.util.UuidV7
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import app.vectra.core.net.ApiClient
 import app.vectra.core.net.ApiException
 import app.vectra.core.net.Diagnosis
@@ -39,12 +68,29 @@ sealed interface Route {
     data object Odometer : Route
     data object Vehicles : Route
     data object Settings : Route
+    data object Service : Route
+    data object Documents : Route
 }
+
+/** Was nach der Dateiauswahl mit der Datei geschehen soll. */
+sealed interface PickPurpose {
+    data object Document : PickPurpose
+    data class VehiclePhoto(val vehicleId: String) : PickPurpose
+}
+
+/** Vom System ausgewählte Datei (Android-Teil liest sie ein). */
+class PickedFile(val name: String, val mediaType: String?, val bytes: ByteArray)
 
 sealed interface DialogState {
     data object AddReading : DialogState
     data class Pending(val entry: OutboxEntry) : DialogState
     data object Logout : DialogState
+    data class Complete(val item: DueStatus) : DialogState
+    data object AddService : DialogState
+    data object AddCost : DialogState
+    data object StartTrip : DialogState
+    data class FinishTrip(val trip: Trip) : DialogState
+    data class AddDocument(val file: PickedFile) : DialogState
 }
 
 /** Zustand der App: Navigation, Sitzung, geladene Daten und Dialoge. */
@@ -60,6 +106,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val home = MutableStateFlow(HomeState())
     val odometer = MutableStateFlow(OdometerState())
     val dialog = MutableStateFlow<DialogState?>(null)
+    val maintenance = MutableStateFlow(MaintenanceState())
+    val costs = MutableStateFlow(CostsState())
+    val trips = MutableStateFlow(TripsState())
+    val documents = MutableStateFlow(DocumentsState())
+    val formError = MutableStateFlow<FormError?>(null)
+    val busy = MutableStateFlow(false)
+    var pickPurpose: PickPurpose = PickPurpose.Document
+    private val photoCache = HashMap<String, ImageBitmap>()
+    private val thumbCache = HashMap<String, ImageBitmap>()
     val pending: StateFlow<List<OutboxEntry>> = c.outboxStore.observe().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var refreshJob: Job? = null
@@ -147,6 +202,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.signOut()
             home.value = HomeState()
             odometer.value = OdometerState()
+            maintenance.value = MaintenanceState()
+            costs.value = CostsState()
+            trips.value = TripsState()
+            documents.value = DocumentsState()
+            photoCache.clear()
+            thumbCache.clear()
             vehicles.value = VehiclesState()
             login.update { LoginState(server = c.prefs.server) }
             _stack.value = listOf(Route.Login)
@@ -181,7 +242,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 vehicles.update { it.copy(currentKm = it.currentKm + (v.id to (cur.value.meterValue?.let { m -> Format.meter(m.canonical, v.meterUnit) } ?: "–"))) }
                 val offline = vs.offline || cur.offline || rs.offline
                 val f = Freshness(offline, if (offline) (rs.fetchedAt ?: vs.fetchedAt)?.let { stamp(it) } else null)
-                home.value = HomeState(v, cur.value, rs.value.take(3), freshness = f, loading = false)
+                val same = home.value.vehicle?.id == v.id
+                home.value = HomeState(v, cur.value, rs.value.take(3), freshness = f, loading = false, photo = photoCache[v.id],
+                    nextDue = home.value.nextDue.takeIf { same }, yearCosts = home.value.yearCosts.takeIf { same })
+                viewModelScope.launch { loadModules(repo, v, vs.value) }
                 odometer.value = OdometerState(v, cur.value, rs.value, odometer.value.months.takeIf { odometer.value.vehicle?.id == v.id } ?: emptyList(), freshness = f, loading = false)
                 if (!offline) {
                     val months = repo.months(v.id).map { m ->
@@ -198,6 +262,197 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: IOException) {
                 fail("Keine Verbindung zum Server und noch keine Daten auf dem Gerät.")
             }
+        }
+    }
+
+    // --- Wartung, Service, Kosten, Fahrten, Dokumente ---
+
+    private fun <T> app.vectra.core.repo.Loaded<T>.fresh() = Freshness(offline, if (offline) fetchedAt?.let { stamp(it) } else null)
+
+    private suspend fun loadModules(repo: VectraRepository, v: Vehicle, all: List<Vehicle>) = coroutineScope {
+        val zone = runCatching { ZoneId.of(v.ownerTimeZone) }.getOrDefault(ZoneId.systemDefault())
+        val today = LocalDate.now(zone)
+        val year = today.year
+        val monthFrom = today.withDayOfMonth(1)
+        val monthTo = today.withDayOfMonth(today.lengthOfMonth())
+        launch {
+            runCatching {
+                val due = repo.due(v.id)
+                val services = repo.services(v.id)
+                maintenance.value = MaintenanceState(v, due.value, services.value, due.fresh(), loading = false)
+                home.update { it.copy(nextDue = due.value.firstOrNull { d -> d.level != "unknown" } ?: due.value.firstOrNull()) }
+            }.onFailure { e -> maintenance.update { it.copy(vehicle = v, loading = false, error = message(e)) } }
+        }
+        launch {
+            runCatching {
+                val report = repo.costReport(v.id, "$year-01-01", "$year-12-31")
+                val occ = repo.occurrences(v.id)
+                val entries = repo.costEntries(v.id)
+                costs.value = CostsState(v, year, report.value, occ.value.items, occ.value.moreOpen, entries.value, report.fresh(), loading = false)
+                val cur = report.value.currencies.firstOrNull()
+                home.update { it.copy(yearCosts = cur?.let { c -> MoneyFormat.format(c.runningTotalMinor, c.currency) }) }
+            }.onFailure { e -> costs.update { it.copy(vehicle = v, year = year, loading = false, error = message(e)) } }
+        }
+        launch {
+            runCatching {
+                val list = repo.trips(v.id)
+                val cats = repo.tripCategories(v.id)
+                val rep = runCatching { repo.tripReport(v.id, monthFrom.toString(), monthTo.toString()).value }.getOrNull()
+                val label = today.month.getDisplayName(TextStyle.FULL, Locale.GERMANY)
+                trips.value = TripsState(v, list.value, cats.value, rep, label, list.fresh(), loading = false)
+            }.onFailure { e -> trips.update { it.copy(vehicle = v, loading = false, error = message(e)) } }
+        }
+        launch {
+            runCatching {
+                val docs = repo.documents(v.id)
+                val files = repo.files(v.id)
+                documents.update { DocumentsState(v, docs.value, files.value, it.thumbs.takeIf { _ -> it.vehicle?.id == v.id } ?: emptyMap(), freshness = docs.fresh(), loading = false) }
+                val byId = files.value.associateBy { f -> f.id }
+                val wanted = docs.value.mapNotNull { d -> d.fileIds.firstOrNull() }.filter { id -> byId[id]?.hasPreview == true }
+                for (id in wanted) {
+                    val bmp = thumbCache[id] ?: repo.api.preview(v.id, id, "thumbnail")?.let(::decode)?.also { b -> thumbCache[id] = b } ?: continue
+                    documents.update { it.copy(thumbs = it.thumbs + (id to bmp)) }
+                }
+            }.onFailure { e -> documents.update { it.copy(vehicle = v, loading = false, error = message(e)) } }
+        }
+        // Fahrzeugfotos (Hauptbild, bereinigte Vorschau ohne EXIF)
+        launch {
+            for (veh in all) {
+                val bmp = photoCache[veh.id] ?: runCatching {
+                    val img = repo.images(veh.id).value.firstOrNull { it.primary } ?: return@runCatching null
+                    repo.api.preview(veh.id, img.fileId, "preview")?.let(::decode)
+                }.getOrNull() ?: continue
+                photoCache[veh.id] = bmp
+                vehicles.update { it.copy(photos = it.photos + (veh.id to bmp)) }
+                if (veh.id == v.id) home.update { it.copy(photo = bmp) }
+            }
+        }
+    }
+
+    private fun decode(bytes: ByteArray): ImageBitmap? = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+
+    private fun message(e: Throwable): String = when (e) {
+        is ApiException -> problemText(e)
+        is IOException -> "Keine Verbindung zum Server."
+        else -> e.message ?: "Unbekannter Fehler"
+    }
+
+    private fun problemText(e: ApiException): String {
+        val p = e.problem
+        val errs = p?.errors?.mapNotNull { it.message }?.filter { it.isNotBlank() }.orEmpty()
+        return when {
+            errs.isNotEmpty() -> errs.joinToString(" · ")
+            p?.anomalies?.isNotEmpty() == true -> p.anomalies.mapNotNull { it.message }.joinToString(" ")
+            else -> p?.detail ?: p?.title ?: "Fehler ${e.status}"
+        }
+    }
+
+    fun openDialog(d: DialogState) {
+        formError.value = null
+        dialog.value = d
+    }
+
+    fun closeDialog() {
+        formError.value = null
+        dialog.value = null
+    }
+
+    /** Erfassen geht direkt an den Server (ohne Outbox); Fehler und Befunde erscheinen im Dialog. */
+    private fun submit(block: suspend (VectraRepository, Vehicle) -> Unit) {
+        val repo = c.repository() ?: return
+        val v = home.value.vehicle ?: return
+        if (busy.value) return
+        busy.value = true
+        formError.value = null
+        viewModelScope.launch {
+            try {
+                block(repo, v)
+                dialog.value = null
+                refresh()
+            } catch (e: ApiException) {
+                formError.value = FormError(problemText(e), e.problem?.anomalies.orEmpty())
+            } catch (e: IOException) {
+                formError.value = FormError("Keine Verbindung. Dieser Eintrag lässt sich nur online speichern.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                formError.value = FormError(message(e))
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
+    private fun zoneOf(v: Vehicle): String = runCatching { ZoneId.of(v.ownerTimeZone).id }.getOrDefault(ZoneId.systemDefault().id)
+    private fun noonToday(v: Vehicle): String = LocalDate.now(ZoneId.of(zoneOf(v))).atTime(12, 0).atZone(ZoneId.of(zoneOf(v))).toInstant().toString()
+
+    fun lastKm(): Double? = home.value.current?.meterValue?.canonical?.let { it / 1000.0 }
+
+    fun complete(item: DueStatus, km: Double?) = submit { repo, v ->
+        val today = LocalDate.now(ZoneId.of(zoneOf(v))).toString()
+        repo.api.complete(v.id, item.itemId, CompletionCreate("done", today, km?.let { QuantityInput(it, "km") }), UuidV7.generate())
+    }
+
+    fun addService(title: String, kind: String, km: Double?, parts: Long, labor: Long, other: Long, completes: List<String>, confirm: Confirmation?) = submit { repo, v ->
+        val items = listOf("parts" to parts, "labor" to labor, "other" to other).filter { it.second != 0L }.map { CostItem(it.first, amountMinor = it.second) }
+            .ifEmpty { listOf(CostItem("labor", amountMinor = 0)) }
+        repo.api.createServiceEntry(v.id, ServiceEntryCreate(UuidV7.generate(), noonToday(v), zoneOf(v), kind = kind, title = title, currency = v.defaultCurrency,
+            odometer = km?.let { QuantityInput(it, "km") }, costItems = items, completes = completes,
+            confirmAnomalies = confirm?.codes, anomalyReason = confirm?.reason))
+    }
+
+    fun addCost(category: String, title: String, amountMinor: Long) = submit { repo, v ->
+        val today = LocalDate.now(ZoneId.of(zoneOf(v))).toString()
+        repo.api.createCostEntry(v.id, CostEntryCreate(UuidV7.generate(), category, title, today, Money(amountMinor, v.defaultCurrency)))
+    }
+
+    fun confirmOccurrence(o: CostOccurrence) = submit { repo, v -> repo.api.confirmOccurrence(v.id, o.planId, o.dueOn) }
+
+    fun startTrip(km: Double, categoryId: String, purpose: String?, from: String?, confirm: Confirmation?) = submit { repo, v ->
+        repo.api.startTrip(v.id, TripStart(UuidV7.generate(), Instant.now().toString(), ZoneId.systemDefault().id, QuantityInput(km, "km"), categoryId, purpose, from,
+            confirm?.codes, confirm?.reason))
+    }
+
+    fun finishTrip(trip: Trip, km: Double, to: String?, confirm: Confirmation?) = submit { repo, v ->
+        repo.api.finishTrip(v.id, trip, TripFinish(Instant.now().toString(), QuantityInput(km, "km"), to, confirm?.codes, confirm?.reason))
+    }
+
+    /** Nach der Dateiauswahl: Fahrzeugfoto direkt hochladen, Dokumente erst nach Titel und Typ. */
+    fun onPicked(file: PickedFile) {
+        when (val p = pickPurpose) {
+            PickPurpose.Document -> openDialog(DialogState.AddDocument(file))
+            is PickPurpose.VehiclePhoto -> uploadVehiclePhoto(p.vehicleId, file)
+        }
+    }
+
+    private fun uploadVehiclePhoto(vehicleId: String, file: PickedFile) {
+        val repo = c.repository() ?: return
+        vehicles.update { it.copy(uploading = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val meta = repo.api.upload(vehicleId, file.name, file.mediaType, file.bytes, "gallery")
+                repo.api.setVehicleImage(vehicleId, meta.id)
+                photoCache.remove(vehicleId)
+                repo.api.preview(vehicleId, meta.id, "preview")?.let(::decode)?.let { bmp ->
+                    photoCache[vehicleId] = bmp
+                    vehicles.update { it.copy(photos = it.photos + (vehicleId to bmp)) }
+                    if (home.value.vehicle?.id == vehicleId) home.update { it.copy(photo = bmp) }
+                }
+                vehicles.update { it.copy(uploading = false) }
+            } catch (e: Exception) {
+                vehicles.update { it.copy(uploading = false, error = message(e)) }
+            }
+        }
+    }
+
+    fun createDocument(file: PickedFile, title: String, docType: String) = submit { repo, v ->
+        documents.update { it.copy(uploading = true, message = null) }
+        try {
+            val meta = repo.api.upload(v.id, file.name, file.mediaType, file.bytes, if (file.mediaType?.startsWith("image/") == true) "camera" else "upload")
+            repo.api.createDocument(v.id, DocumentCreate(UuidV7.generate(), docType, title, listOf(meta.id)))
+            documents.update { it.copy(message = if (meta.duplicateOf != null) "Die Datei war bereits vorhanden; das Dokument verweist auf sie." else "„$title“ gespeichert.") }
+        } finally {
+            documents.update { it.copy(uploading = false) }
         }
     }
 

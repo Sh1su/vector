@@ -73,6 +73,8 @@ data class Vehicle(
     @SerialName("usage_meter") val usageMeter: String = "distance",
     val status: String = "active",
     @SerialName("my_role") val myRole: String = "viewer",
+    @SerialName("default_currency") val defaultCurrency: String = "EUR",
+    @SerialName("owner_time_zone") val ownerTimeZone: String = "Europe/Berlin",
     val version: Long = 0,
 ) {
     val canEdit: Boolean get() = myRole == "owner" || myRole == "editor"
