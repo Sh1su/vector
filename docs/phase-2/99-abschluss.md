@@ -8,7 +8,7 @@
 | Bereich | Dokumente |
 |---|---|
 | Entscheidungen | `00-entscheidungslog.md` (E-0 bis E-14), `01-arbeitsplan.md` |
-| Architektur | 30 ADRs in `docs/adr/` (001, 003–031; 002 in 001 aufgegangen) |
+| Architektur | 31 ADRs in `docs/adr/` (000, 001, 003–031; 002 in 001 aufgegangen) |
 | Domänenmodelle | `10-domaene-uebersicht.md` + 11 Module (Odometer, Fuel, ServiceHistory, Maintenance, Costs, Vehicles, Identity, Oil, Trips, Documents, Notes) |
 | Regeln | `20-regelkatalog-soll.md`: 60 Phase-1-Regeln → 11 KEEP, 36 FIX, 13 DROP; 97 Soll-Tests, 36 Vergleichstests, Querschnittstests |
 | API | `api/openapi.yaml`: 109 Pfade, 162 Operationen, Lint grün, Codegenerierung (oapi-codegen) kompiliert |
