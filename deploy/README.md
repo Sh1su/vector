@@ -27,6 +27,13 @@ Danach `https://<VECTRA_DOMAIN>/einrichtung` öffnen und das erste Administrator
 - Lokal ohne TLS: `docker compose run --rm -p 8080:8080 -e VECTRA_COOKIE_SECURE=false vectra` und `http://localhost:8080` öffnen.
 - Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump`.
 
+## Nur im Heimnetz (eigener Reverse-Proxy, z. B. Nginx Proxy Manager)
+
+- Den `caddy`-Dienst weglassen und bei `vectra` `ports: ["8080:8080"]` setzen; der Proxy leitet auf `http://<Server-IP>:8080`.
+- Läuft der Zugriff über **http://** (z. B. `http://vector.lan`): `VECTRA_COOKIE_SECURE: "false"` setzen, sonst sendet weder Browser noch App die Sitzung mit.
+- Läuft er über **https://** mit eigenem Zertifikat: `VECTRA_COOKIE_SECURE` bleibt `"true"`; das CA-Zertifikat auf dem Handy installieren (Einstellungen → Sicherheit → Verschlüsselung → Zertifikat installieren). Die App vertraut vom Nutzer installierten Zertifizierungsstellen.
+- In der App die Adresse **mit Schema** eintragen, z. B. `http://vector.lan`. Ohne Schema nimmt die App `https://` an. Klartext-HTTP erlaubt die App nur für lokale Namen (`*.lan`, `*.local`, `*.home.arpa`, `*.internal`, `*.fritz.box`).
+
 ## Android-App (APK)
 
 Jeder CI-Lauf legt im Actions-Lauf das Artefakt **`vectra-apk`** ab. Bei einem Tag `v*` hängt die APK zusätzlich am GitHub-Release.

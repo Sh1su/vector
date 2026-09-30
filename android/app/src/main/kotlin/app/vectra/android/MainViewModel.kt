@@ -16,6 +16,7 @@ import app.vectra.android.ui.Tab
 import app.vectra.core.model.Vehicle
 import app.vectra.core.net.ApiClient
 import app.vectra.core.net.ApiException
+import app.vectra.core.net.Diagnosis
 import app.vectra.core.outbox.OutboxEntry
 import app.vectra.core.util.Format
 import kotlinx.coroutines.Job
@@ -105,10 +106,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     c.signOut()
                     c.prefs.server = base
                 }
-                val account = c.repository()!!.api.login(s.email.trim(), s.password)
-                c.prefs.accountName = account.displayName
-                c.prefs.accountEmail = account.email
-                null
+                val api = c.repository()!!.api
+                val account = api.login(s.email.trim(), s.password)
+                // Wird die Sitzung nicht mitgesendet (Secure-Cookie über HTTP, Proxy), scheitert der nächste Aufruf.
+                val sessionOk = try { api.me(); true } catch (e: ApiException) { if (e.status == 401) false else throw e }
+                if (!sessionOk) {
+                    Diagnosis.sessionNotSent(base)
+                } else {
+                    c.prefs.accountName = account.displayName
+                    c.prefs.accountEmail = account.email
+                    null
+                }
             } catch (e: ApiException) {
                 when (e.status) {
                     401 -> "E-Mail oder Passwort ist falsch."
@@ -116,7 +124,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     else -> e.message
                 }
             } catch (e: IOException) {
-                "Server nicht erreichbar. Prüfe die Adresse und deine Verbindung."
+                Diagnosis.network(e, c.prefs.server.ifBlank { s.server })
             } catch (e: IllegalArgumentException) {
                 "Ungültige Server-Adresse."
             }

@@ -47,7 +47,7 @@ fun LoginScreen(
             Text("Intelligentes Fahrzeugmanagement auf einen Blick.", style = VType.body, color = c.muted, textAlign = TextAlign.Center)
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            VField("Server", state.server, onServer, VIcons.sync, placeholder = "vectra.example.org", keyboardType = KeyboardType.Uri)
+            VField("Server", state.server, onServer, VIcons.sync, placeholder = "z. B. http://vector.lan", keyboardType = KeyboardType.Uri)
             VField("E-Mail", state.email, onEmail, VIcons.mail, placeholder = "name@beispiel.de", keyboardType = KeyboardType.Email)
             VField("Passwort", state.password, onPassword, VIcons.lock, placeholder = "Passwort", password = true)
         }
