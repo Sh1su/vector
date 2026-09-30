@@ -21,9 +21,9 @@ Bis zu einer anderen Entscheidung des Auftraggebers gelten die dort empfohlenen 
 
 | It. | Inhalt | Ergebnis |
 |---|---|---|
-| **1** (diese) | Fundament + erster vertikaler Schnitt: Repository-Gerüst, Codegenerierung, Migrationen, Identity-Kern (Ersteinrichtung, lokale Anmeldung, Sitzung, CSRF, Rechteprüfung), Vehicles, Odometer (alle ODO-Regeln), Web-App im Vectra-Design (Anmeldung, Übersicht, Fahrzeuge, Kilometerstand, Hell/Dunkel), Compose-Deployment, CI | lauffähiges System: Fahrzeug anlegen, Kilometerstände erfassen mit Plausibilitätsdialog |
-| 2 | Fuel, Oil, ServiceHistory, Maintenance, Costs (Kostenbuch) mit allen Soll-Tests; Web-Seiten Kraftstoff, Öl, Servicehistorie, Wartung, Kosten | Fachkern vollständig |
-| 3 | Trips, Documents (Storage, Beweisfotos), Notes, Audit-Ansicht, Freigaben/Einladungen, OIDC | alle MVP-Module |
+| **1** | Fundament + erster vertikaler Schnitt: Repository-Gerüst, Codegenerierung, Migrationen, Identity-Kern (Ersteinrichtung, lokale Anmeldung, Sitzung, CSRF, Rechteprüfung), Vehicles, Odometer (alle ODO-Regeln), Web-App im Vectra-Design (Anmeldung, Übersicht, Fahrzeuge, Kilometerstand, Hell/Dunkel), Compose-Deployment, CI | lauffähiges System: Fahrzeug anlegen, Kilometerstände erfassen mit Plausibilitätsdialog |
+| 2 | Fuel, Oil, ServiceHistory, Maintenance, Costs (Kostenbuch) mit allen Soll-Tests; Web-Seiten Kraftstoff, Öl, Servicehistorie, Wartung, Kosten. **Teil 1 umgesetzt** (Service, Wartung, Kosten, dazu vorgezogen Fahrten), siehe `20-iteration-2.md` | Fachkern vollständig |
+| 3 | ~~Trips~~ (vorgezogen), Documents (Storage, Beweisfotos), Notes, Audit-Ansicht, Freigaben/Einladungen, OIDC | alle MVP-Module |
 | 4 | Notifications (E-Mail, UnifiedPush, FCM optional, Webhooks), Jobs, Backup/Restore, i18n EN | betriebsbereit |
 | 5 | Import LubeLogger (LiteDB-Leser), CSV-Import, Export | Migration |
 | 6 | Android: Tachofoto mit Hash, UnifiedPush, Fahrten, Kraftstoff und Öl mobil (die App-Basis entsteht auf Wunsch des Auftraggebers ab Iteration 1 parallel, siehe `10-android.md`) | App |
