@@ -43,7 +43,7 @@ import java.time.Instant
 // Rendert die Screens mit Beispieldaten als PNG (390 × 844 dp wie die Entwürfe), zur Sichtprüfung
 // ohne Android-Gerät: gradle -Pvectra.uiCheck=true :uicheck:run --args=<Zielordner>
 
-private val brandDir = File("../web/public/brand")
+private val brandDir = File(System.getProperty("vectra.brandDir") ?: "../../web/public/brand")
 private fun logo(name: String) = SkImage.makeFromEncoded(File(brandDir, name).readBytes()).toComposeImageBitmap()
 
 private val golf = Vehicle("v1", "VW Golf VII", "B-VX 123", "VW", "Golf VII", 2017, myRole = "owner")

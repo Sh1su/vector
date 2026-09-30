@@ -30,7 +30,8 @@ Die Screens sind zustandslos und plattformneutral (`app/src/main/kotlin/app/vect
 | `:core:test`: 21 Tests (Outbox-Zustände, Bestätigung, Wiederholung mit gleicher ID, Cookie/CSRF, Problem Details, Cache-Rückfall, Monatsgrenzen in lokaler Zone, UUIDv7, Formate) | grün |
 | Integrationstest gegen das laufende Backend: Fahrzeug anlegen, Stand senden, P1-Befund → „braucht Bestätigung“, Wiederholung liefert `200` statt eines Duplikats, bestätigen → `201`, Status `confirmed_anomaly`, Fahrzeug löschen | grün |
 | `:uicheck:compileKotlin` (alle Screens, Theme, Komponenten, Icons) | grün |
-| `:app:assembleDebug`, Lint, Rendern der Screens | **nicht ausführbar:** `dl.google.com`/`maven.google.com` sind in dieser Umgebung gesperrt (AGP, AndroidX). Läuft in der CI (Job „Android“, Artefakte APK und Screenshots). |
+| `:app:assembleDebug`, `:app:lintDebug` | lokal nicht ausführbar (`dl.google.com`/`maven.google.com` gesperrt); in der CI grün (Job „Android“, Artefakt APK) |
+| Rendern der Screens als PNG | nur in der CI (Artefakt „android“) |
 
 ## Offen
 

@@ -38,5 +38,6 @@ tasks.register<JavaExec>("renderScreens") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("app.vectra.android.RenderKt")
     workingDir = projectDir
+    systemProperty("vectra.brandDir", rootProject.file("../web/public/brand").absolutePath)
     args(layout.buildDirectory.dir("screens").get().asFile.absolutePath)
 }
