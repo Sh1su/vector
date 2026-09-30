@@ -6513,6 +6513,7 @@ components:
       properties:
         value:
           type: number
+          format: double
           minimum: 0
         unit:
           $ref: '#/components/schemas/UnitCode'
@@ -6532,6 +6533,7 @@ components:
           type:
           - number
           - 'null'
+          format: double
         input_unit:
           oneOf:
           - $ref: '#/components/schemas/UnitCode'
@@ -6545,6 +6547,7 @@ components:
       properties:
         value:
           type: number
+          format: double
         unit:
           type: string
           examples:
@@ -7888,6 +7891,7 @@ components:
       properties:
         value:
           type: number
+          format: double
           minimum: 0
         currency:
           $ref: '#/components/schemas/Currency'
@@ -7975,12 +7979,14 @@ components:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           soc_end_pct:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           charge_type:
@@ -8076,12 +8082,14 @@ components:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           soc_end_pct:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           charge_type:
@@ -8150,12 +8158,14 @@ components:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           soc_end_pct:
             type:
             - number
             - 'null'
+            format: double
             minimum: 0
             maximum: 100
           charge_type:
@@ -8276,6 +8286,7 @@ components:
           type:
           - number
           - 'null'
+          format: double
           minimum: -50
           maximum: 150
         step:
@@ -8411,16 +8422,19 @@ components:
             type:
             - number
             - 'null'
+            format: double
             readOnly: true
           level_after_pct:
             type:
             - number
             - 'null'
+            format: double
             readOnly: true
           level_after_pct_computed:
             type:
             - number
             - 'null'
+            format: double
             readOnly: true
           series_id:
             type: string
@@ -9041,6 +9055,7 @@ components:
           type: integer
         share_pct:
           type: number
+          format: double
       required:
       - key
       - distance
@@ -9547,6 +9562,7 @@ components:
           maxLength: 100
         quantity:
           type: number
+          format: double
           minimum: 0
         quantity_unit:
           type:
@@ -10748,6 +10764,7 @@ components:
           type: string
         rank:
           type: number
+          format: double
       required:
       - title
       - rank
