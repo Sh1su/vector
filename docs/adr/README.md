@@ -9,16 +9,28 @@ Jede bewusste Architektur- oder Fachentscheidung, insbesondere jede Abweichung v
 |---|---|---|
 | [000](ADR-000-clean-room-rebrand.md) | Clean-Room-Neuentwicklung als Rebrand | akzeptiert |
 | [001](ADR-001-modularer-monolith.md) | Modularer Monolith mit fachlichen Modulen | akzeptiert |
+| [003](ADR-003-http-framework.md) | HTTP-Schicht: chi auf net/http | akzeptiert |
+| [004](ADR-004-datenzugriff.md) | Datenzugriff: PostgreSQL mit pgx und sqlc | akzeptiert |
+| [005](ADR-005-migrationswerkzeug.md) | Schema-Migrationen mit goose | akzeptiert |
 | [006](ADR-006-ids-uuidv7.md) | IDs: UUIDv7, clientseitig erzeugbar | akzeptiert |
 | [007](ADR-007-einheitenmodell.md) | Einheitenmodell: SI intern + Originalwert | akzeptiert |
 | [008](ADR-008-zeitmodell.md) | Zeitmodell: Zeitstempel mit Zeitzone | akzeptiert |
 | [009](ADR-009-kilometerstand-modell.md) | Kilometerstand als eigene Messreihe mit Herkunft und Tachotausch | akzeptiert |
 | [010](ADR-010-plausibilitaet.md) | Plausibilitätsprüfung: Warnen und bestätigen | akzeptiert |
+| [011](ADR-011-audit.md) | Audit und Änderungsverfolgung | akzeptiert |
+| [012](ADR-012-locking-idempotenz.md) | Optimistisches Locking und Idempotenz | akzeptiert |
+| [013](ADR-013-api-konventionen.md) | API-Konventionen | akzeptiert |
+| [014](ADR-014-openapi-workflow.md) | OpenAPI 3.1 spec-first | akzeptiert |
 | [015](ADR-015-authentifizierung.md) | Authentifizierung: OIDC und lokale Konten | akzeptiert |
 | [016](ADR-016-autorisierung.md) | Autorisierung: Rollen je Fahrzeug, zentrale Prüfung | akzeptiert |
+| [017](ADR-017-object-storage.md) | Object Storage und Dateizugriff | akzeptiert |
+| [018](ADR-018-beweisfotos.md) | Beweisfotos | akzeptiert |
+| [019](ADR-019-background-jobs.md) | Background Jobs mit River | akzeptiert |
 | [020](ADR-020-benachrichtigungen.md) | Benachrichtigungen: E-Mail, UnifiedPush, optional FCM | akzeptiert |
 | [027](ADR-027-migration-lubelogger.md) | Migration aus LubeLogger: Offline-Import mit Prüfbericht | akzeptiert |
 | [029](ADR-029-kosten-waehrung.md) | Kosten: Währung je Betrag, Teile/Arbeit getrennt | akzeptiert |
 | [031](ADR-031-altfehler-korrigieren.md) | Fehler der Altanwendung korrigieren statt nachbauen | akzeptiert |
 
-Geplant (AP-2 ff.): 003 HTTP-Framework, 004 Datenzugriff, 005 Migrationswerkzeug, 011 Audit, 012 Locking/Idempotenz, 013 API-Konventionen, 014 OpenAPI-Workflow, 017 Object Storage, 018 Beweisfotos, 019 Jobs, 021 Offline-Sync, 022 Web-Design-System, 023 Diagramme, 024–026 KI, 028 i18n, 030 Deployment/Backup.
+ADR-002 (Modulgrenzen) ist in ADR-001 aufgegangen.
+
+Geplant (AP-8 ff.): 021 Offline-Sync, 022 Web-Design-System, 023 Diagramme, 024–026 KI, 028 i18n, 030 Deployment/Backup.
