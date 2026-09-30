@@ -24,7 +24,7 @@ Grundlage: offene Fragen aus `docs/phase-1/10-offene-fragen.md`. Alle Entscheidu
 | ID | Frage | Geplant |
 |---|---|---|
 | Q-07 | Kompatibilitätsschicht zur LubeLogger-API | nicht MVP; Bedarf nach Pilotphase erheben |
-| Q-10 | Genaue Abbildung der Record-Typen auf Zielmodule | Vorschlag in phase-1/10 gilt vorläufig; Feinschnitt im Migrationskonzept (AP-7) |
+| Q-10 | Genaue Abbildung der Record-Typen auf Zielmodule | **erledigt** in `30-migrationskonzept.md` §5 (AP-7) |
 | Q-13 | Fahrtenbuch mit Unveränderbarkeit | Datenmodell Fahrten wird append-only mit Korrekturbuchungen entworfen (AP-4) |
 | Q-16 | Übersetzungen | durch E-0 entschieden: Texte werden neu verfasst |
 | Q-18 | Technische Restunsicherheiten | Spikes in AP-9; anonymisierte Beispielexporte von Pilotnutzern erbeten |

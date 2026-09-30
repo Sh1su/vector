@@ -14,7 +14,7 @@ Bestehende LubeLogger-Nutzer sollen wechseln können. Einheiten, Quell-Zeitzone 
 3. **Prüfbericht** als HTML/PDF und im UI: rückläufige Kilometerstände (werden als `confirmed_anomaly` mit Vermerk „Import“ übernommen, ADR-010), abweichende Fahrzeug-IDs (Phase 1 D-08), fehlende Dateien, doppelte Einträge durch Automatiken (MG-11), Extra-Felder ohne Ziel.
 4. **Nicht übernommen:** Passwörter, API-Keys, offene Tokens (E-6). Konten werden anhand der E-Mail angelegt, die Nutzer erhalten eine Einladung.
 5. **Zurückgestellte Funktionen (E-5):** Aufgabenplaner-, Teilelager-, Inspektions- und Ausstattungsdaten sowie Notizen werden als Notizen bzw. Dokumente am Fahrzeug abgelegt (strukturierte Kopie als JSON-Anhang), damit nichts verloren geht.
-6. **Dateien:** Jede referenzierte Datei wird ins Vectra-Storage kopiert, der SHA-256 wird berechnet und `upload_time_origin = import` gesetzt. Externe Links werden als Link-Dokumente übernommen, unreferenzierte Dateien nur auf Wunsch.
+6. **Dateien:** Jede referenzierte Datei wird ins Vectra-Storage kopiert, der SHA-256 wird berechnet und `upload_time_origin = import` gesetzt. Externe Links werden als Text in der Notiz des Zieldatensatzes übernommen (präzisiert in AP-7, weil Documents im MVP keinen Link-Typ hat), unreferenzierte Dateien nur auf Wunsch. Details: `docs/phase-2/30-migrationskonzept.md`.
 7. **Clean-Room (ADR-000):** Das Import-Modul enthält nur Fakten über das Fremdformat (Tabellen-, Feld- und Enum-Namen) als Mapping-Konstanten. Die Implementierung ist Neuentwicklung. Das Lesen des LiteDB-Formats in Go wird in einem Spike geprüft (AP-9).
 
 ## Konsequenzen

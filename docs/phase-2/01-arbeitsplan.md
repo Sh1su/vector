@@ -33,7 +33,7 @@ Phase 2 liefert Entscheidungen und Spezifikationen für Vectra, **keinen Produkt
 | AP-4 | Domänenmodelle neue Module: Oil, Trips, Documents, Notes, Vehicles, Identity | `docs/phase-2/10-domaene-vehicles`, `-identity`, `-oil`, `-trips`, `-documents`, `-notes` | ✅ Entwurf |
 | AP-5 | Soll-Regelkatalog (Neuformulierung, KEEP/FIX/DROP je Phase-1-Regel, neue Regeln) + Regressionstestliste | `docs/phase-2/20-regelkatalog-soll.md` | ✅ Entwurf |
 | AP-6 | OpenAPI-3.1-Entwurf Kernressourcen | `api/openapi.yaml`, `api/README.md` (nur Spezifikation) | ✅ Entwurf, Lint grün |
-| AP-7 | Migrationskonzept LubeLogger → Vectra | `docs/phase-2/30-migrationskonzept.md` | ⏳ als Nächstes |
+| AP-7 | Migrationskonzept LubeLogger → Vectra | `docs/phase-2/30-migrationskonzept.md` | ✅ Entwurf |
 | AP-8 | Betrieb, Notifications, Offline-Sync (021), Frontend-Design-System (022/023), i18n (028), Deployment/Backup (030) | `docs/adr/` | offen |
 | AP-9 | Spikes (Wegwerfcode, nicht im Produkt): Speicherbudget Go-Backend, LiteDB-Leser in Go, River/sqlc | `docs/phase-2/40-spikes.md` | offen |
 | AP-10 | KI: Anbieter-Abstraktion (024), RAG/pgvector (025), Werkzeugschicht (026) | `docs/adr/` | offen |
