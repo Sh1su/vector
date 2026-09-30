@@ -28,4 +28,4 @@ Grundlage: offene Fragen aus `docs/phase-1/10-offene-fragen.md`. Alle Entscheidu
 | Q-13 | Fahrtenbuch mit Unveränderbarkeit | Datenmodell Fahrten wird append-only mit Korrekturbuchungen entworfen (AP-4) |
 | Q-16 | Übersetzungen | durch E-0 entschieden: Texte werden neu verfasst |
 | Q-18 | Technische Restunsicherheiten | Spikes in AP-9; anonymisierte Beispielexporte von Pilotnutzern erbeten |
-| E-14 (Auftrag 5.3) | Ressourcenbudgets als Abnahmekriterien | Bestätigung ausstehend; bis dahin gelten die Zielwerte aus dem Auftrag |
+| E-14 (Auftrag 5.3) | Ressourcenbudgets als Abnahmekriterien | Bestätigung ausstehend. Spike S-1/S-5 messen: Backend 14 MB Leerlauf, Image 17 MB, initiales JS 144 KB (`40-spikes.md`); Empfehlung: bestätigen |

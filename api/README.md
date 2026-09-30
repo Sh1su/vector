@@ -6,7 +6,7 @@
 
 ## Umfang
 
-102 Pfade, 152 Operationen, 165 Schemas.
+109 Pfade, 162 Operationen, 174 Schemas.
 
 | Bereich | Operationen | Bereich | Operationen |
 |---|---|---|---|
@@ -17,9 +17,9 @@
 | Fuel | 6 | Notifications | 8 |
 | Oil | 7 | Import | 7 |
 | Trips | 13 | Audit, Sync, Admin, Health | 9 |
-| Maintenance | 10 | | |
+| Maintenance | 10 | Assistant (optional) | 10 |
 
-Nicht enthalten: Assistant-Endpunkte (AP-10, ADR-026) und die Kompatibilitätsschicht zur LubeLogger-API (Q-07, nicht MVP).
+Nicht enthalten: die Kompatibilitätsschicht zur LubeLogger-API (Q-07, nicht MVP). Assistant-Endpunkte antworten mit `404`, solange der Assistent nicht aktiviert ist (ADR-024).
 
 ## Gestaltungsregeln im Entwurf
 
@@ -41,5 +41,5 @@ Stand 30.09.2026: gültig, ohne Warnungen. Zusätzlich muss die CI prüfen (ADR-
 
 ## Offene Punkte
 
-- **OP-API-1:** Ob `oapi-codegen` alle genutzten 3.1-Konstrukte (`type: [x, "null"]`, `contentMediaType`) verarbeitet, klärt Spike S-2 (`docs/phase-2/40-spikes.md`).
+- ~~OP-API-1~~ erledigt durch Spike S-2: `oapi-codegen` v2.8.0 (mit `nullable-type: true`) und `ogen` generieren die Spezifikation vollständig; Mehrfachtypen außer `[T, "null"]` sind verboten (ADR-014).
 - **OP-API-2:** Mengen- und Kurznamen der Anzeigeeinheiten (`DisplayValue.unit`) bekommen eine feste Liste, sobald i18n festgelegt ist (ADR-028).

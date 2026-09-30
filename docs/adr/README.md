@@ -27,10 +27,18 @@ Jede bewusste Architektur- oder Fachentscheidung, insbesondere jede Abweichung v
 | [018](ADR-018-beweisfotos.md) | Beweisfotos | akzeptiert |
 | [019](ADR-019-background-jobs.md) | Background Jobs mit River | akzeptiert |
 | [020](ADR-020-benachrichtigungen.md) | Benachrichtigungen: E-Mail, UnifiedPush, optional FCM | akzeptiert |
+| [021](ADR-021-offline-sync.md) | Offline-Erfassung und Synchronisation (Android) | akzeptiert |
+| [022](ADR-022-web-design-system.md) | Web-Design-System: shadcn/ui-Muster (Radix + Tailwind) | akzeptiert |
+| [023](ADR-023-diagramme.md) | Diagramme: Chart.js, lazy geladen | akzeptiert |
+| [024](ADR-024-ki-anbieter-datenschutz.md) | KI-Anbieter-Abstraktion und Datenschutz | akzeptiert |
+| [025](ADR-025-rag-pgvector.md) | Dokumentenanalyse (RAG) mit pgvector | akzeptiert |
+| [026](ADR-026-assistent-werkzeuge.md) | Assistent als Werkzeugschicht | akzeptiert |
 | [027](ADR-027-migration-lubelogger.md) | Migration aus LubeLogger: Offline-Import mit Prüfbericht | akzeptiert |
+| [028](ADR-028-mehrsprachigkeit.md) | Mehrsprachigkeit (Deutsch und Englisch) | akzeptiert |
 | [029](ADR-029-kosten-waehrung.md) | Kosten: Währung je Betrag, Teile/Arbeit getrennt | akzeptiert |
+| [030](ADR-030-deployment-betrieb.md) | Deployment, Backup und Betrieb | akzeptiert |
 | [031](ADR-031-altfehler-korrigieren.md) | Fehler der Altanwendung korrigieren statt nachbauen | akzeptiert |
 
 ADR-002 (Modulgrenzen) ist in ADR-001 aufgegangen.
 
-Geplant (AP-8 ff.): 021 Offline-Sync, 022 Web-Design-System, 023 Diagramme, 024–026 KI, 028 i18n, 030 Deployment/Backup.
+Alle in Phase 1 vorgeschlagenen ADRs (001–031) liegen vor; ADR-002 ist in ADR-001 aufgegangen.

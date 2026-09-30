@@ -9,7 +9,7 @@ info:
 
     **Erweiterungen:** `x-vectra-role` = mindestens nötige Rolle am Fahrzeug (`viewer`, `editor`, `editor-delete`, `owner`, `owner-delete`) bzw. `self`/`admin`/`public`; `x-vectra-scope` = nötiger API-Token-Scope. Die CI verweigert Operationen ohne diese Angaben (deny-by-default).
 
-    **Nicht Teil dieses Entwurfs:** Assistant-Endpunkte (AP-10, ADR-026).
+    **Assistant-Endpunkte** existieren nur, wenn der Assistent aktiviert ist; sonst `404` (ADR-024).
   license:
     name: Proprietär – Lizenz wird vor Veröffentlichung festgelegt
     identifier: LicenseRef-Vectra-TBD
@@ -48,6 +48,8 @@ tags:
   description: Änderungshistorie (ADR-011)
 - name: Sync
   description: Änderungsfeed für Offline-Clients (ADR-021)
+- name: Assistant
+  description: Optionaler KI-Assistent (ADR-024 bis ADR-026)
 - name: Admin
   description: Verwaltung der Installation
 - name: Operations
@@ -5061,6 +5063,12 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '410':
+          description: Cursor älter als die Aufbewahrung der Tombstones (90 Tage) – vollständig neu laden (ADR-021)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security:
       - sessionCookie: []
       - bearerToken: []
@@ -5785,6 +5793,334 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
       security: []
       x-vectra-role: public
+  /assistant/status:
+    get:
+      operationId: getAssistantStatus
+      summary: Aktivierung, Anbieter, Zustimmung
+      tags:
+      - Assistant
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantStatus'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version der Ressource
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /assistant/consent:
+    post:
+      operationId: giveAssistantConsent
+      summary: Zustimmung zu externem Anbieter geben
+      tags:
+      - Assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistantConsent'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantStatus'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version der Ressource
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      x-vectra-role: self
+    delete:
+      operationId: revokeAssistantConsent
+      summary: Zustimmung widerrufen
+      tags:
+      - Assistant
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      x-vectra-role: self
+  /assistant/conversations:
+    get:
+      operationId: listConversations
+      summary: Eigene Unterhaltungen
+      tags:
+      - Assistant
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+    post:
+      operationId: createConversation
+      summary: Unterhaltung beginnen (optional mit Fahrzeugkontext)
+      tags:
+      - Assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Conversation'
+      responses:
+        '201':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version der Ressource
+            Location:
+              schema:
+                type: string
+        '200':
+          description: Idempotente Wiederholung mit gleicher ID und gleichem Inhalt (ADR-006)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /assistant/conversations/{conversation_id}:
+    delete:
+      operationId: deleteConversation
+      summary: Unterhaltung löschen
+      tags:
+      - Assistant
+      parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /assistant/conversations/{conversation_id}/messages:
+    get:
+      operationId: listAssistantMessages
+      summary: Nachrichten
+      tags:
+      - Assistant
+      parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantMessagePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+    post:
+      operationId: sendAssistantMessage
+      summary: Nachricht senden; Antwort als Server-Sent Events (Text, Zitate, Vorschläge)
+      tags:
+      - Assistant
+      parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistantMessage'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE-Strom; letztes Ereignis enthält die vollständige AssistantMessage
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /assistant/proposals/{proposal_id}/confirm:
+    post:
+      operationId: confirmProposal
+      summary: Vorschlag bestätigen → Ausführung über Application Service
+      tags:
+      - Assistant
+      description: Rechte, Plausibilität und Audit wie beim direkten API-Aufruf (ADR-026); Herkunft `assistant`
+      parameters:
+      - $ref: '#/components/parameters/ProposalId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposalConfirm'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version der Ressource
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /assistant/proposals/{proposal_id}/reject:
+    post:
+      operationId: rejectProposal
+      summary: Vorschlag verwerfen
+      tags:
+      - Assistant
+      parameters:
+      - $ref: '#/components/parameters/ProposalId'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version der Ressource
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
 components:
   securitySchemes:
     sessionCookie:
@@ -5939,6 +6275,20 @@ components:
         format: uuid
     JobId:
       name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProposalId:
+      name: proposal_id
       in: path
       required: true
       schema:
@@ -10148,6 +10498,10 @@ components:
         allow_duplicate:
           type: boolean
           default: false
+        client_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          description: 'ADR-021: Hash auf dem Gerät; Abweichung → 422'
       required:
       - file
     FileReplace:
@@ -11187,6 +11541,216 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FailedJob'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+    AssistantStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        user_enabled:
+          type: boolean
+        chat_provider:
+          type:
+          - object
+          - 'null'
+          properties:
+            name:
+              type: string
+            external:
+              type: boolean
+          required:
+          - name
+          - external
+        embedding_provider:
+          type:
+          - object
+          - 'null'
+          properties:
+            name:
+              type: string
+            external:
+              type: boolean
+          required:
+          - name
+          - external
+        consent_required:
+          type: boolean
+        consent_given_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - enabled
+      - user_enabled
+      - consent_required
+      description: 'ADR-024: externe Anbieter nur nach Zustimmung'
+    AssistantConsent:
+      type: object
+      properties:
+        accept_external_provider:
+          type: boolean
+        provider_name:
+          type: string
+      required:
+      - accept_external_provider
+      - provider_name
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        vehicle_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        title:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    Citation:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        page:
+          type:
+          - integer
+          - 'null'
+        snippet:
+          type: string
+        nature:
+          type: string
+          enum:
+          - specification
+          - record
+          - other
+      required:
+      - document_id
+      - snippet
+      - nature
+    Proposal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          examples:
+          - createOilEntry
+        vehicle_id:
+          type: string
+          format: uuid
+        body:
+          type: object
+          properties: {}
+          additionalProperties: true
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Anomaly'
+        status:
+          type: string
+          enum:
+          - pending
+          - confirmed
+          - rejected
+          - expired
+        expires_at:
+          type: string
+          format: date-time
+        result_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - id
+      - operation
+      - vehicle_id
+      - body
+      - status
+      - expires_at
+      description: 'ADR-026: Vorschlag, nie direkte Ausführung'
+    AssistantMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+          readOnly: true
+        text:
+          type: string
+          maxLength: 8000
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+          readOnly: true
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Proposal'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - text
+    ProposalConfirm:
+      allOf:
+      - type: object
+        properties:
+          body:
+            type: object
+            properties: {}
+            additionalProperties: true
+            description: optional bearbeiteter Request-Body
+      - $ref: '#/components/schemas/AnomalyConfirmation'
+    ConversationPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+    AssistantMessagePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssistantMessage'
         next_cursor:
           type:
           - string
