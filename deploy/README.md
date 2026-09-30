@@ -1,13 +1,55 @@
-# Vectra betreiben (Iteration 1)
+# Vectra betreiben
+
+## Server (Docker)
+
+Die CI veröffentlicht bei jedem Push ein Image für amd64 und arm64 unter `ghcr.io/sh1su/vector`:
+
+| Tag | Inhalt |
+|---|---|
+| `latest` | letzter Stand des Standard-Branches |
+| `sha-<commit>` | genau dieser Commit |
+| `1.2.3` | Release-Tag `v1.2.3` |
 
 ```bash
-cd deploy
+mkdir vectra && cd vectra
+# compose.yaml, Caddyfile und .env.example aus deploy/ auf den Server kopieren
 cp .env.example .env    # Domain und Datenbankpasswort eintragen
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose logs vectra | grep setup_token   # Einmal-Token für die Ersteinrichtung
 ```
 
-Danach `https://<VECTRA_DOMAIN>/einrichtung` öffnen und das erste Administratorkonto anlegen.
+Danach `https://<VECTRA_DOMAIN>/einrichtung` öffnen und das erste Administratorkonto anlegen. Aktualisieren: `docker compose pull && docker compose up -d`.
 
+**Sichtbarkeit des Pakets:** Neue Pakete auf ghcr.io sind privat. Entweder das Paket unter GitHub → Profil → Packages → `vector` → Package settings auf *Public* stellen, oder auf dem Server anmelden: `echo <TOKEN> | docker login ghcr.io -u <github-name> --password-stdin` (Personal Access Token mit `read:packages`).
+
+- Selbst bauen statt ziehen: `docker compose build` (im Repository-Ordner `deploy/`).
 - Lokal ohne TLS: `docker compose run --rm -p 8080:8080 -e VECTRA_COOKIE_SECURE=false vectra` und `http://localhost:8080` öffnen.
 - Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump`.
+
+## Android-App (APK)
+
+Jeder CI-Lauf legt im Actions-Lauf das Artefakt **`vectra-apk`** ab. Bei einem Tag `v*` hängt die APK zusätzlich am GitHub-Release.
+
+- `vectra-<version>.apk`: Release-APK, mit deinem Schlüssel signiert. Sie entsteht nur, wenn die Signatur-Secrets gesetzt sind (unten).
+- `vectra-<version>-debug.apk`: immer vorhanden. Sie wird aber mit einem wechselnden Debug-Schlüssel signiert. Updates lassen sich deshalb nicht darüber installieren, sondern nur nach Deinstallation, und dabei gehen die lokalen Daten verloren.
+
+In der App als Server die Domain eintragen, z. B. `vectra.example.org`.
+
+### Signatur einrichten (einmalig)
+
+```bash
+keytool -genkeypair -v -keystore vectra.jks -alias vectra -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 vectra.jks > vectra.jks.b64
+```
+
+Unter GitHub → Repository → Settings → Secrets and variables → Actions anlegen:
+
+| Secret | Wert |
+|---|---|
+| `VECTRA_KEYSTORE_BASE64` | Inhalt von `vectra.jks.b64` |
+| `VECTRA_KEYSTORE_PASSWORD` | Keystore-Passwort |
+| `VECTRA_KEY_ALIAS` | `vectra` |
+| `VECTRA_KEY_PASSWORD` | Schlüsselpasswort (falls abweichend) |
+
+`vectra.jks` sicher aufbewahren. Ohne ihn lassen sich keine Updates der App mehr ausliefern.

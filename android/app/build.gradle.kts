@@ -14,15 +14,31 @@ android {
         applicationId = "app.vectra.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // In der CI: fortlaufende Laufnummer, damit sich jede neue APK als Update installieren lässt.
+        versionCode = System.getenv("VECTRA_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("VECTRA_VERSION_NAME") ?: "0.1.0"
+    }
+
+    // Release-Signatur aus Umgebungsvariablen (CI-Secrets). Ohne Schlüssel bleibt die Release-APK
+    // unsigniert und lässt sich nicht installieren; dann gilt die Debug-APK.
+    val keystore = System.getenv("VECTRA_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = keystore
+                storePassword = System.getenv("VECTRA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("VECTRA_KEY_ALIAS")
+                keyPassword = System.getenv("VECTRA_KEY_PASSWORD") ?: System.getenv("VECTRA_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // R8 bleibt aus, bis die Release-Variante auf einem Gerät geprüft ist.
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 

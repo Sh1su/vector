@@ -59,6 +59,8 @@ jobs:
   android:
     name: Android
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     services:
       postgres:
         image: postgres:16-alpine
@@ -92,29 +94,99 @@ jobs:
           VECTRA_IT_EMAIL: ci@example.org
           VECTRA_IT_PASSWORD: Sicheres-Passwort-2026
         run: ./gradlew --no-daemon :core:test
-      - name: App bauen (Debug-APK, Lint)
+      - name: App bauen (Debug- und Release-APK, Lint)
         working-directory: android
-        run: ./gradlew --no-daemon :app:assembleDebug :app:lintDebug
+        env:
+          VECTRA_VERSION_CODE: ${{ github.run_number }}
+          VECTRA_VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
+          KEYSTORE_BASE64: ${{ secrets.VECTRA_KEYSTORE_BASE64 }}
+          VECTRA_KEYSTORE_PASSWORD: ${{ secrets.VECTRA_KEYSTORE_PASSWORD }}
+          VECTRA_KEY_ALIAS: ${{ secrets.VECTRA_KEY_ALIAS }}
+          VECTRA_KEY_PASSWORD: ${{ secrets.VECTRA_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/vectra.jks"
+            export VECTRA_KEYSTORE_FILE="$RUNNER_TEMP/vectra.jks"
+          fi
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:lintDebug
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/vectra-$VECTRA_VERSION_NAME-debug.apk"
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk "dist/vectra-$VECTRA_VERSION_NAME.apk"
+          else
+            echo "::notice::Keine Signatur-Secrets gesetzt – nur Debug-APK verfügbar."
+          fi
+          rm -f "$RUNNER_TEMP/vectra.jks"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vectra-apk
+          path: android/dist/*.apk
+      - name: GitHub-Release mit APK (nur bei Tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/dist/*.apk
+          generate_release_notes: true
       - name: Screens rendern (Sichtprüfung)
         working-directory: android
         run: ./gradlew --no-daemon -Pvectra.uiCheck=true :uicheck:renderScreens
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: android
+          name: android-screens-lint
           path: |
-            android/app/build/outputs/apk/debug/*.apk
             android/uicheck/build/screens/*.png
             android/app/build/reports/lint-results-debug.html
 
   image:
-    name: Container-Image (Budget < 50 MB)
+    name: Container-Image (Budget < 50 MB, Veröffentlichung nach ghcr.io)
     runs-on: ubuntu-latest
     needs: [backend, web]
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t vectra:ci .
+      - uses: docker/setup-buildx-action@v3
+      - name: Image bauen (amd64) für die Budget-Prüfung
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: vectra:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - run: |
           size=$(docker image inspect vectra:ci --format '{{.Size}}')
           echo "Image: $((size/1024/1024)) MB"
           test "$size" -lt 52428800
+      - name: Tags bestimmen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/vector
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Vectra
+            org.opencontainers.image.description=Intelligent Vehicle Management
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Multi-Arch-Image veröffentlichen (amd64, arm64)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

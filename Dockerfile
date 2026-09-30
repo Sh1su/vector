@@ -1,5 +1,6 @@
 # Vectra – ein Image mit Backend und Web-App (ADR-030). Laufzeit: FROM scratch, ohne Root.
-FROM node:22-alpine AS web
+# Web und Go laufen auf der Build-Plattform; Go übersetzt direkt für die Zielarchitektur (amd64, arm64).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -7,13 +8,14 @@ COPY web/ ./
 COPY api/ /src/api/
 RUN npm run build
 
-FROM golang:1.26-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS backend
+ARG TARGETOS=linux TARGETARCH=amd64
 WORKDIR /src/backend
 ENV CGO_ENABLED=0 GOFLAGS=-mod=mod
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN go build -trimpath -ldflags "-s -w" -o /out/vectra ./cmd/vectra
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/vectra ./cmd/vectra
 
 FROM scratch
 COPY --from=backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
