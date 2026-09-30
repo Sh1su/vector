@@ -70,7 +70,7 @@ erDiagram
 | `covers_from` / `covers_to` | optionaler Leistungszeitraum (z. B. Versicherungsjahr); für die zeitanteilige Auswertung (CO-04) |
 | `recurring_plan_id`, `plan_occurrence_on` | gesetzt, wenn der Eintrag aus einem Plan bestätigt wurde |
 | `cost_ledger.source_module` | `fuel`, `service`, `costs` |
-| `cost_ledger.category` | Kategorien oben plus `energy` (Fuel), `maintenance`, `repair`, `upgrade` (ServiceHistory) |
+| `cost_ledger.category` | Kategorien oben plus `energy` (Fuel), `maintenance`, `inspection`, `repair`, `upgrade` (ServiceHistory) |
 | `cost_ledger.cost_kind` | bei Service: `parts`, `labor`, `other`; sonst leer |
 
 ## 3. Invarianten

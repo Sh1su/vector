@@ -21,7 +21,11 @@ erDiagram
     uuid id
     uuid vehicle_id
     text title
+    text description
     text category
+    bool manufacturer_recommended
+    uuid source_document_id
+    int source_page
     text schedule_mode
     int interval_months
     int interval_days
@@ -30,10 +34,10 @@ erDiagram
     bigint anchor_total
     date due_date_once
     bigint due_total_once
-    int soon_days
-    int near_days
-    bigint soon_distance
-    bigint near_distance
+    int upcoming_days
+    int due_days
+    bigint upcoming_distance
+    bigint due_distance
     bool active
   }
   MAINTENANCE_COMPLETION {
@@ -50,13 +54,16 @@ erDiagram
 ### 2.1 `maintenance_item`
 | Feld | Regel |
 |---|---|
-| `category` | `service`, `legal_inspection` (HU/TÜV, AU), `tires`, `fluids`, `other` |
+| `title`, `description` | Name (Pflicht) und Beschreibung |
+| `category` | `service`, `legal_inspection` (HU/TÜV, AU), `tires`, `fluids`, `brakes`, `filters`, `other` |
+| `manufacturer_recommended` | Intervall stammt aus der Herstellervorgabe (Auftrag 6.9) |
+| `source_document_id`, `source_page` | Quelle der Vorgabe: Dokument (z. B. Wartungshandbuch) und Seite; optional. Der Assistent darf eine Vorgabe nur mit Quelle vorschlagen (AP-10). |
 | `schedule_mode` | `once`, `from_last_completion` (Default), `fixed_grid` |
 | `interval_months` / `interval_days` | höchstens eines von beiden gesetzt; > 0 |
 | `interval_distance` | kanonisch (m bzw. s bei Stundenzähler), > 0 |
 | `anchor_date`, `anchor_total` | Startpunkt, bevor es eine Erledigung gibt (z. B. Erstzulassung, Kaufdatum oder „zuletzt gemacht am“) |
 | `due_date_once`, `due_total_once` | nur bei `once` |
-| `soon_*`, `near_*` | eigene Schwellen der Definition; leer = Vorgabe aus Nutzereinstellung, danach Installation (MA-05) |
+| `upcoming_*`, `due_*` | eigene Schwellen der Definition; leer = Vorgabe aus Nutzereinstellung, danach Installation (MA-05) |
 | `active` | inaktive Definitionen werden nicht bewertet |
 
 ### 2.2 `maintenance_completion`
@@ -106,26 +113,26 @@ Basis `S` = `completed_total` der maßgeblichen Erledigung. Fehlt er, wird `Valu
 - Alle Werte sind **Gesamtlaufleistung**. Ein Tachotausch verschiebt die Fälligkeit deshalb nicht (ADR-009).
 
 ### MA-04 – Stufe je Auslöser
-Stufen, aufsteigend: `ok` < `soon` (demnächst) < `near` (bald fällig) < `overdue` (überfällig).
+Stufen, aufsteigend (Begriffe laut Auftrag 6.9): `ok` < `upcoming` (demnächst fällig) < `due` (fällig) < `overdue` (überfällig). `due` umfasst das kurze Fenster unmittelbar vor der Fälligkeit einschließlich Fälligkeitstag bzw. Fälligkeitsstand.
 
 **Zeit** (Kalenderdaten in `owner_time_zone`, `heute` = aktuelles Datum dort):
 - `heute > fällig_am` → `overdue`. Am Fälligkeitstag selbst ist die Wartung noch nicht überfällig (ADR-008).
-- `fällig_am − heute ≤ near_days` → `near`
-- `fällig_am − heute ≤ soon_days` → `soon`
+- `fällig_am − heute ≤ due_days` → `due`
+- `fällig_am − heute ≤ upcoming_days` → `upcoming`
 - sonst `ok`
 - Die **Resttage** sind `fällig_am − heute` in ganzen Kalendertagen (am Fälligkeitstag 0).
 
 **Distanz** (`aktuell` = Gesamtlaufleistung aus `Current()`, ODO-04):
 - `aktuell > fällig_bei` → `overdue`. Gleichstand ist noch nicht überfällig.
-- `fällig_bei − aktuell ≤ near_distance` → `near`
-- `fällig_bei − aktuell ≤ soon_distance` → `soon`
+- `fällig_bei − aktuell ≤ due_distance` → `due`
+- `fällig_bei − aktuell ≤ upcoming_distance` → `upcoming`
 - sonst `ok`
 - Ist der aktuelle Stand unbekannt, ist der Auslöser **nicht bewertbar**. Die Stufe richtet sich dann allein nach dem Zeitauslöser; hat die Definition keinen, lautet sie `unknown` mit Hinweis „Kilometerstand erfassen“.
 
 ### MA-05 – Schwellen
 Je Definition gelten ausschließlich **ihre eigenen** Schwellen bzw. die Vorgaben. Sie werden für jede Definition einzeln aufgelöst, nie über mehrere Definitionen hinweg geteilt. Reihenfolge der Auflösung: Definition → Nutzereinstellung → Installation.
 
-Installationsvorgaben (Vorschlag, konfigurierbar): `soon_days` 30, `near_days` 7, `soon_distance` 1 500 km, `near_distance` 500 km. Bei Stundenzählern: 20 h / 5 h.
+Installationsvorgaben (Vorschlag, konfigurierbar): `upcoming_days` 30, `due_days` 7, `upcoming_distance` 1 500 km, `due_distance` 500 km. Bei Stundenzählern: 20 h / 5 h.
 
 ### MA-06 – Gesamtstufe einer Definition
 Gesamtstufe = die **höchste** Stufe über alle Auslöser. Als Grund wird der Auslöser mit der höchsten Stufe angegeben. Haben beide dieselbe Stufe, wird der Auslöser genannt, der nach Prognose (MA-07) zuerst erreicht wird. Die Antwort enthält immer **beide** Restwerte (Tage und Distanz), soweit vorhanden.
@@ -150,16 +157,16 @@ Definition „Ölwechsel“: `from_last_completion`, 12 Monate / 15 000 km. Letz
 | # | Situation | Erwartung |
 |---|---|---|
 | M-1 | Fälligkeit | `fällig_am` = 10.03.2027, `fällig_bei` = 60 000 km |
-| M-2 | heute 30.09.2026, aktuell 58 700 km | Distanz: Rest 1 300 km ≤ 1 500 → `soon`; Zeit: Rest 161 Tage → `ok`; Gesamt `soon`, Grund Distanz |
-| M-3 | aktuell 59 600 km | Rest 400 km ≤ 500 → `near` |
-| M-4 | aktuell 60 000 km | Gleichstand → `near` (nicht überfällig); bei 60 001 km → `overdue` |
+| M-2 | heute 30.09.2026, aktuell 58 700 km | Distanz: Rest 1 300 km ≤ 1 500 → `upcoming`; Zeit: Rest 161 Tage → `ok`; Gesamt `upcoming`, Grund Distanz |
+| M-3 | aktuell 59 600 km | Rest 400 km ≤ 500 → `due` |
+| M-4 | aktuell 60 000 km | Gleichstand → `due` (nicht überfällig); bei 60 001 km → `overdue` |
 | M-5 | `fixed_grid` monatlich, Anker 31.01.2026, keine Erledigung, danach Erledigung am 28.02. | Fälligkeiten 28.02. → 31.03. → 30.04. (Raster ab Anker, kein Abrutschen auf den 28.) |
-| M-6 | Zeitauslöser fällig am 10.03.2027 | am 10.03.2027 `near` mit 0 Resttagen; am 11.03.2027 `overdue` |
-| M-7 | Definition A: eigene Schwelle `soon_days` 365, fällig in 200 Tagen; danach Definition B mit Vorgaben, fällig in 100 Tagen | A → `soon`; B → `ok`. Schwellen gelten nie für andere Definitionen. |
+| M-6 | Zeitauslöser fällig am 10.03.2027 | am 10.03.2027 `due` mit 0 Resttagen; am 11.03.2027 `overdue` |
+| M-7 | Definition A: eigene Schwelle `upcoming_days` 365, fällig in 200 Tagen; danach Definition B mit Vorgaben, fällig in 100 Tagen | A → `upcoming`; B → `ok`. Schwellen gelten nie für andere Definitionen. |
 | M-8 | Serviceeintrag vom 12.03.2027 bei 60 400 km erledigt „Ölwechsel“ | neue Fälligkeit 12.03.2028 / 75 400 km. Das Löschen des Eintrags stellt M-1 wieder her. |
 | M-9 | HU: `from_last_completion`, 24 Monate, nur Zeit; überfällig seit 3 Monaten | bleibt `overdue` bis zur Erledigung (MA-08) |
 | M-10 | Tachotausch nach der Erledigung (Offset 130 000 km) | `fällig_bei` bleibt als Gesamtlaufleistung gleich. Die UI zeigt zusätzlich den Zählerwert des neuen Instruments. |
-| M-11 | nächste Wartung: Zeit-Definition in 30 Tagen `soon`, km-Definition Rest 1 000 km bei 50 km/Tag (≈ 20 Tage) `soon` | `NextDue` = km-Definition (gleiche Stufe, früheres geschätztes Datum) |
+| M-11 | nächste Wartung: Zeit-Definition in 30 Tagen `upcoming`, km-Definition Rest 1 000 km bei 50 km/Tag (≈ 20 Tage) `upcoming` | `NextDue` = km-Definition (gleiche Stufe, früheres geschätztes Datum) |
 
 ## 7. Abgleich mit Phase 1 (vorläufig)
 
@@ -179,4 +186,4 @@ Definition „Ölwechsel“: `from_last_completion`, 12 Monate / 15 000 km. Letz
 ## 8. Offene Punkte
 
 - **OP-MA-1:** Vorlagen für typische Wartungspläne je Fahrzeugtyp (z. B. „PKW Standard“)? Vorschlag: eigene, neu formulierte Vorlagen nach MVP.
-- **OP-MA-2:** Schwellen für `soon_distance`/`near_distance` fachlich bestätigen (Vorschlag 1 500 / 500 km).
+- **OP-MA-2:** Schwellen für `upcoming_distance`/`due_distance` fachlich bestätigen (Vorschlag 1 500 / 500 km).

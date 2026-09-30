@@ -1,6 +1,6 @@
 # 10 – Domänenmodelle: Übersicht und gemeinsame Bausteine
 
-- **Status:** Entwurf (AP-3) · **Datum:** 2026-09-30
+- **Status:** Entwurf (AP-3, ergänzt in AP-4) · **Datum:** 2026-09-30
 - **Leitlinie:** ADR-000. Die Modelle sind eigenständig formuliert. Bezüge auf Phase 1 (BR-xxx, D-xx) nennen nur, welches fachliche Verhalten betrachtet wurde, und klassifizieren es vorläufig nach ADR-031 (KEEP/FIX/DROP). Verbindlich klassifiziert wird im Soll-Regelkatalog (AP-5).
 
 ## 1. Dokumente dieses Arbeitspakets
@@ -12,8 +12,14 @@
 | `10-domaene-servicehistory.md` | ServiceHistory | Wartung, Reparatur, Nachrüstung mit Kostenpositionen und Teilen |
 | `10-domaene-maintenance.md` | Maintenance | Wartungsdefinitionen, Fälligkeit, Erledigung |
 | `10-domaene-costs.md` | Costs | Sonstige Kosten, wiederkehrende Kosten, Kostenbuch, Kennzahlen |
+| `10-domaene-vehicles.md` | Vehicles (AP-4) | Stammdaten, Lebenszyklus, Bilder, Zusatzfelder, Dashboard |
+| `10-domaene-identity.md` | Identity (AP-4) | Konten, Anmeldung, Sitzungen, API-Tokens, Einladungen, Rollen |
+| `10-domaene-oil.md` | Oil (AP-4) | Ölstand, Nachfüllung, Ölwechsel, Nachfüllrate, Verbrauch |
+| `10-domaene-trips.md` | Trips (AP-4) | Fahrten, Überlappungsschutz, Korrekturfassungen, Kategorien |
+| `10-domaene-documents.md` | Documents (AP-4) | Dateien, Fahrzeugakte, Verknüpfungen, Suche |
+| `10-domaene-notes.md` | Notes (AP-4) | Notizen, Aufnahme zurückgestellter Altdaten |
 
-Die Module Vehicles, Identity, Oil, Trips, Documents und Notes folgen in AP-4. Wo die Fachkern-Module Fahrzeugattribute brauchen, sind sie hier als **Anforderung an Vehicles** gekennzeichnet.
+Die Fahrzeugattribute, die die Fachmodule brauchen, sind in §5 gesammelt und in `10-domaene-vehicles.md` umgesetzt.
 
 ## 2. Kontextkarte
 
@@ -38,6 +44,10 @@ flowchart LR
   Notif -->|Fälligkeitsstufen| Maint
   Notif -->|anstehende Kosten| Costs
   Fuel & Service & Costs -->|Belege| Docs
+  Oil[Oil] -->|erzeugt/liest Messpunkt| Odometer
+  Trips[Trips] -->|Start-/End-Messpunkt| Odometer
+  Oil & Trips -->|Fotos| Docs
+  Identity[Identity] -.->|Rechteprüfung für alle Module| Vehicles
   Odometer & Fuel & Service & Maint & Costs -->|Fahrzeugdaten| Vehicles
 ```
 
@@ -90,7 +100,7 @@ Verbrauch, Kosten pro Distanz und Ähnliches werden **nie gespeichert**. Die Ber
 
 **Rechte:** Die Rollenmatrix aus ADR-016 gilt für alle Operationen dieser Module. Die Module definieren keine eigenen Rollen.
 
-## 5. Anforderungen an Vehicles (AP-4)
+## 5. Anforderungen an Vehicles
 
 Die Fachkern-Module benötigen folgende Fahrzeugattribute:
 
@@ -100,6 +110,7 @@ Die Fachkern-Module benötigen folgende Fahrzeugattribute:
 | `energy_carriers[]` ⊆ {`petrol`, `diesel`, `lpg`, `electricity`} | Fuel | Zulässige Energieträger; zwei Einträge = bivalent/Plug-in-Hybrid |
 | `tank_capacity_ml` (optional, je Energieträger) | Fuel (Plausibilität) | Tankinhalt |
 | `battery_usable_capacity_wh` (optional) | Fuel (EV-Verbrauch) | nutzbare Batteriekapazität |
+| `oil_dipstick_range_ml`, `oil_capacity_ml` (optional) | Oil | Ölmenge Min→Max am Peilstab; Füllmenge |
 | `odometer_required` (Default `true`) | Fuel, ServiceHistory | ob ein Kilometerstand bei Einträgen Pflicht ist |
 | `owner_time_zone` | Maintenance | Zeitzone für Fälligkeiten nach Kalenderdatum |
 | `default_currency` | Fuel, ServiceHistory, Costs | Vorbelegung |

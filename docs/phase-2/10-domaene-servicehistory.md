@@ -5,11 +5,11 @@
 
 ## 1. Zweck und Abgrenzung
 
-ServiceHistory dokumentiert **durchgeführte** Arbeiten am Fahrzeug: planmäßige Wartung, Reparatur und Nachrüstung. Die Einträge enthalten Kostenpositionen, getrennt nach Teilen, Arbeit und Sonstigem, sowie optional eine Teileliste.
+ServiceHistory dokumentiert **durchgeführte** Arbeiten am Fahrzeug: planmäßige Wartung, Reparatur und Nachrüstung. Werkstattbesuche mit mehreren Arbeiten werden als ein Eintrag mit mehreren Positionen erfasst. Die Einträge enthalten Kostenpositionen, getrennt nach Teilen, Arbeit und Sonstigem, sowie optional eine Teileliste.
 
 **Was fällig ist**, entscheidet Maintenance. Ein Serviceeintrag kann eine oder mehrere Wartungsdefinitionen **erledigen**; die Verknüpfung wird gespeichert (§5, SH-04).
 
-Nicht im MVP: Teilelager mit Bestandsabbuchung, Planer/Kanban, Inspektionsformulare (E-5).
+Nicht im MVP: Teilelager mit Bestandsabbuchung, Planer/Kanban, Inspektions-**Checklisten** mit Prüfpunkten (E-5). Eine Inspektion als Eintragsart ist dagegen enthalten.
 
 ## 2. Datenmodell
 
@@ -26,6 +26,7 @@ erDiagram
     uuid id
     uuid vehicle_id
     text kind
+    text category
     text title
     text description
     timestamptz occurred_at
@@ -57,7 +58,8 @@ erDiagram
 
 | Feld | Regel |
 |---|---|
-| `kind` | `maintenance` (planmäßige Wartung), `repair` (Reparatur), `upgrade` (Nachrüstung/Umbau) |
+| `kind` | `maintenance` (planmäßige Wartung), `inspection` (Inspektion/Durchsicht, auch HU/TÜV-Termin), `repair` (Reparatur), `upgrade` (Nachrüstung/Umbau) |
+| `category` | frei konfigurierbare Kategorie je Konto (z. B. Bremsen, Reifen, Elektrik); optional |
 | `title` | Pflicht, 1–200 Zeichen |
 | `currency` | eine Währung je Eintrag, gilt für alle Kostenpositionen (ADR-029) |
 | `provider_name` | Werkstatt oder „Eigenleistung“ |
@@ -131,7 +133,7 @@ Beim Anlegen oder Ändern kann der Nutzer Wartungsdefinitionen desselben Fahrzeu
 | BR-036 (Teil) | ein Gesamtbetrag je Eintrag | Kostenpositionen Teile/Arbeit/Sonstiges | FIX |
 | BR-042/BR-043 | Abbuchung und Rückbuchung aus dem Teilelager | Teilelager nicht im MVP (E-5) | DROP |
 | BR-044/BR-045 | Planer erzeugt Serviceeinträge | Planer nicht im MVP | DROP |
-| BR-046/BR-047 | Inspektionen erzeugen Service-Kopien | Inspektionen nicht im MVP | DROP |
+| BR-046/BR-047 | Inspektions-Checklisten erzeugen Service-Kopien | Checklisten nicht im MVP; Inspektion ist Eintragsart `inspection`, keine Kopien | DROP |
 | BR-057 | Typwechsel über Kopieren und Löschen, ohne Transaktion | I-SH-4 Feldänderung | FIX |
 | BR-058 | Verweise auf andere Einträge als Anhang | Verknüpfungen zu Dokumenten (AP-4) | offen (AP-4) |
 

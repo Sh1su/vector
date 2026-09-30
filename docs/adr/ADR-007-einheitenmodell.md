@@ -22,7 +22,7 @@ Option A.
 | Ölstand | Prozent 0–100 zwischen Min und Max (E-13) | `numeric(5,2)` |
 | Ladezustand | Prozent 0–100 | `numeric(5,2)` |
 
-Jeder **erfasste** Messwert speichert zusätzlich `input_value` (Dezimalzahl wie eingegeben) und `input_unit` (Code wie `km`, `mi`, `l`, `gal_us`, `gal_imp`, `kWh`). Berechnete Werte (Verbrauch, Kosten pro km) werden nicht gespeichert, sondern aus kanonischen Werten berechnet und für die Ausgabe in die **Anzeigeeinheit** umgerechnet.
+Jeder **erfasste** Messwert speichert zusätzlich `input_value` (Dezimalzahl wie eingegeben) und `input_unit` (Code wie `km`, `mi`, `h`, `l`, `ml`, `gal_us`, `gal_imp`, `qt_us`, `qt_imp`, `kWh`; Quarts für Motoröl ergänzt in AP-4: 1 qt US = 946,352946 ml, 1 qt imp = 1 136,5225 ml). Berechnete Werte (Verbrauch, Kosten pro km) werden nicht gespeichert, sondern aus kanonischen Werten berechnet und für die Ausgabe in die **Anzeigeeinheit** umgerechnet.
 
 - **Anzeigeeinheiten** sind eine Nutzereinstellung mit Default je Fahrzeug. Sie betreffen nur die Darstellung.
 - **Umrechnungsfaktoren** sind exakt definiert: 1 mi = 1 609,344 m; 1 US gal = 3,785411784 l; 1 imp gal = 4,54609 l.

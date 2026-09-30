@@ -12,7 +12,7 @@ Self-Hosting muss ohne Identity-Provider möglich sein, soll aber vorhandene IdP
 - **Web:** serverseitige Sitzung, Cookie `HttpOnly; Secure; SameSite=Lax`, CSRF-Schutz für zustandsändernde Requests, Sitzungen widerrufbar, Rechte werden bei jedem Request aus der Datenbank gelesen.
 - **Android:** OAuth2-Flow gegen Vectra (PKCE), kurzlebiges Access-Token (15 min) + rotierendes Refresh-Token, Speicherung im Android Keystore.
 - **Persönliche API-Tokens:** zufällig ≥ 256 Bit, nur gehasht gespeichert, mit Scopes (ADR-016), Ablaufdatum und Übergabe nur per Header.
-- **Einladungen/Reset-Links:** zufällig ≥ 128 Bit, gehasht gespeichert, Ablauf 24 h, einmalig verwendbar.
+- **Einladungen/Reset-Links:** zufällig ≥ 128 Bit, gehasht gespeichert, einmalig verwendbar; Ablauf 24 h für Reset-Links, 7 Tage für Einladungen (präzisiert in AP-4, `10-domaene-identity.md` ID-04).
 
 ## Konsequenzen
 - (+) Behebt alle Auth-Schwächen aus Phase 1 konzeptionell.

@@ -30,8 +30,8 @@ Phase 2 liefert Entscheidungen und Spezifikationen für Vectra, **keinen Produkt
 | AP-1 | Grundsatz-ADRs aus Workshop | `docs/adr/ADR-000, 001, 006–010, 015, 016, 020, 027, 029, 031` | ✅ Erstfassung akzeptiert |
 | AP-2 | Querschnitts-ADRs: Tech-Stack (003–005), Audit (011), Locking/Idempotenz (012), API-Konventionen (013), OpenAPI-Workflow (014), Storage/Beweisfotos (017/018), Jobs (019) | `docs/adr/ADR-003–005, 011–014, 017–019` | ✅ Erstfassung akzeptiert |
 | AP-3 | Domänenmodelle Fachkern: Odometer, Fuel, ServiceHistory, Maintenance, Costs | `docs/phase-2/10-domaene-uebersicht.md`, `-odometer`, `-fuel`, `-servicehistory`, `-maintenance`, `-costs` | ✅ Entwurf |
-| AP-4 | Domänenmodelle neue Module: Oil, Trips, Documents, Notes, Vehicles, Identity | `docs/phase-2/10-domaene-*.md` | ⏳ als Nächstes |
-| AP-5 | Soll-Regelkatalog (Neuformulierung, KEEP/FIX/DROP je Phase-1-Regel, neue Regeln) + Regressionstestliste | `docs/phase-2/20-regelkatalog-soll.md` | offen |
+| AP-4 | Domänenmodelle neue Module: Oil, Trips, Documents, Notes, Vehicles, Identity | `docs/phase-2/10-domaene-vehicles`, `-identity`, `-oil`, `-trips`, `-documents`, `-notes` | ✅ Entwurf |
+| AP-5 | Soll-Regelkatalog (Neuformulierung, KEEP/FIX/DROP je Phase-1-Regel, neue Regeln) + Regressionstestliste | `docs/phase-2/20-regelkatalog-soll.md` | ⏳ als Nächstes |
 | AP-6 | OpenAPI-3.1-Entwurf Kernressourcen | `api/openapi.yaml` (nur Spezifikation) | offen |
 | AP-7 | Migrationskonzept LubeLogger → Vectra | `docs/phase-2/30-migrationskonzept.md` | offen |
 | AP-8 | Betrieb, Notifications, Offline-Sync (021), Frontend-Design-System (022/023), i18n (028), Deployment/Backup (030) | `docs/adr/` | offen |

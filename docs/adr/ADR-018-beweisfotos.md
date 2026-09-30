@@ -10,7 +10,7 @@ Kilometerstände, Tankquittungen, Ölstände und Schäden sollen per Foto belegt
 - **Zeitangaben getrennt:** `received_at` (Serverzeit, maßgeblich), `captured_at` aus EXIF bzw. aus der App (Aufnahmezeit laut Gerät, als Angabe des Nutzers gekennzeichnet). Weichen beide deutlich ab (> 24 h), wird das angezeigt, nicht verhindert.
 - **EXIF getrennt:** Metadaten werden serverseitig ausgelesen und als JSONB gespeichert. Standortdaten werden nur gespeichert, wenn der Nutzer das in den Einstellungen erlaubt; sonst verworfen.
 - **Ableitungen getrennt:** Vorschaubilder und bereinigte Versionen (ohne EXIF, gedreht, verkleinert) sind eigene Objekte mit Verweis auf das Original. Angezeigt und geteilt werden standardmäßig die bereinigten Versionen; das Original nur für Eigentümer und Bearbeiter.
-- **Verknüpfung:** Ein Beweisfoto hängt an genau einem Fachobjekt (z. B. Messpunkt, Tankvorgang, Ölmessung, Serviceeintrag) über `evidence_links` mit Rolle (`odometer_display`, `receipt`, `dipstick`, `damage`).
+- **Verknüpfung:** Ein Beweisfoto hängt an genau einem Fachobjekt (z. B. Messpunkt, Tankvorgang, Ölmessung, Serviceeintrag) über eine Verknüpfung `attachment_link` mit Rolle (`odometer_display`, `receipt`, `dipstick`, `damage`); Modell siehe `docs/phase-2/10-domaene-documents.md`.
 - **App-Aufnahme:** Die Android-App kennzeichnet Fotos aus der Kamera (`capture_source = camera`) und aus der Galerie (`gallery`) unterschiedlich.
 - **Optionale Auswertung:** Das Ablesen des Kilometerstands aus dem Foto ist eine Assistant-Funktion (ADR-026) und erzeugt nur einen Vorschlag, den der Nutzer bestätigt.
 
