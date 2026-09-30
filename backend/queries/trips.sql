@@ -4,7 +4,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (vehicle_id, default_key) DO NOTHING;
 
 -- name: ListCategories :many
-SELECT * FROM trips.category WHERE vehicle_id = $1 ORDER BY default_key NULLS LAST, name, id;
+SELECT * FROM trips.category WHERE vehicle_id = $1 ORDER BY default_key IS NULL, array_position(ARRAY['private','business','commute','other']::text[], default_key), name, id;
 
 -- name: GetCategory :one
 SELECT * FROM trips.category WHERE id = $1;

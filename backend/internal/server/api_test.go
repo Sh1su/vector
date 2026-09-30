@@ -19,11 +19,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gopkg.in/yaml.v3"
 
+	"github.com/sh1su/vector/backend/internal/costs"
 	"github.com/sh1su/vector/backend/internal/identity"
 	istore "github.com/sh1su/vector/backend/internal/identity/store"
 	"github.com/sh1su/vector/backend/internal/kernel"
+	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/db"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 	vstore "github.com/sh1su/vector/backend/internal/vehicles/store"
 )
@@ -52,7 +56,7 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -62,7 +66,11 @@ func newEnv(t *testing.T) *env {
 	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) { return odometer.HasReadings(ctx, q, id) }
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: 250})
 	odo.Now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
-	srv := httptest.NewServer(Handler(Deps{Identity: ids, Vehicles: veh, Odometer: odo, Log: log, CookieSecure: false}))
+	now := func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
+	cs, ms, ss, ts := costs.NewService(pool, odo), maintenance.NewService(pool, odo), servicehistory.NewService(pool, odo), trips.NewService(pool, odo)
+	cs.Now, ms.Now, ss.Now, ts.Now = now, now, now, now
+	srv := httptest.NewServer(Handler(Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: cs, Maintenance: ms, Service: ss, Trips: ts,
+		Log: log, CookieSecure: false}))
 	t.Cleanup(func() { srv.Close(); pool.Close() })
 	return &env{t: t, srv: srv, pool: pool}
 }
@@ -399,7 +407,7 @@ func TestAuthorizationAcrossVehicles(t *testing.T) {
 func TestNotImplementedIs501(t *testing.T) {
 	e := newEnv(t)
 	c := e.adminClient()
-	r := c.do("GET", "/me/due", nil)
+	r := c.do("GET", "/me/notification-preferences", nil)
 	expect(t, r, 501, "not implemented")
 	if r.header.Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("content type %s", r.header.Get("Content-Type"))

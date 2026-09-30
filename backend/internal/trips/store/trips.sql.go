@@ -277,7 +277,7 @@ func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (TripsTr
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, vehicle_id, name, kind, purpose_required, active, default_key, created_at, created_by, version FROM trips.category WHERE vehicle_id = $1 ORDER BY default_key NULLS LAST, name, id
+SELECT id, vehicle_id, name, kind, purpose_required, active, default_key, created_at, created_by, version FROM trips.category WHERE vehicle_id = $1 ORDER BY default_key IS NULL, array_position(ARRAY['private','business','commute','other']::text[], default_key), name, id
 `
 
 func (q *Queries) ListCategories(ctx context.Context, vehicleID pgtype.UUID) ([]TripsCategory, error) {
