@@ -14,6 +14,11 @@ In der Altanwendung ist der „aktuelle Kilometerstand“ das Maximum über fün
 6. **Distanz zwischen zwei Zeitpunkten** = Differenz der Gesamtlaufleistung der jeweils zeitlich nächstgelegenen gültigen Messpunkte. Alle Module (Fuel, Oil, Costs, Maintenance) nutzen diese eine Funktion. Die widersprüchlichen Distanzdefinitionen der Altanwendung (D-12) entfallen damit.
 7. **Umrechnungsfaktoren** (Tachoabweichung, Multiplikator) sind **nicht** im MVP. Ein fester Multiplikator wird bei Bedarf später als Eigenschaft eines Zählerabschnitts ergänzt.
 
+## Präzisierung AP-3 (2026-09-30)
+Ausgearbeitet in `docs/phase-2/10-domaene-odometer.md`:
+1. Das Messwertfeld heißt allgemein `value` und ist kanonisch in Metern (`usage_meter = distance`) oder Sekunden (`engine_hours`). `value_m` in Punkt 2 bezeichnet den Distanzfall.
+2. Zu Punkt 6: Der Stand zu einem Zeitpunkt wird zwischen den umgebenden gültigen Messpunkten **linear interpoliert** (ODO-06), nicht vom zeitlich nächsten Messpunkt übernommen. Vor dem ersten Messpunkt ist er unbekannt, nach dem letzten wird der letzte Wert fortgeschrieben (keine Extrapolation). Dadurch sind Distanzen über aneinandergrenzende Zeiträume additiv.
+
 ## Konsequenzen
 - (+) Nachvollziehbare Historie; eine einzige Definition von „Stand“ und „Distanz“.
 - (+) Tachotausch fachlich sauber abgebildet.
