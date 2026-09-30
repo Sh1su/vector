@@ -88,7 +88,7 @@ fun app.vectra.core.model.DueStatus.dueText(): String {
     distanceRemaining?.let {
         parts += if (it.value < 0) Format.number(-it.value, 0) + " ${it.unit} drüber" else "noch " + Format.number(it.value, 0) + " ${it.unit}"
     }
-    if (estimated && estimatedDueDate != null) parts += "voraussichtlich " + day(estimatedDueDate)
+    estimatedDueDate?.takeIf { estimated }?.let { parts += "voraussichtlich " + day(it) }
     return parts.joinToString(" · ").ifBlank { if (level == "unknown") "Letzte Durchführung im Web eintragen" else "" }
 }
 

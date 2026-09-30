@@ -31,9 +31,15 @@ Spezifikation: `DueStatus.vehicle_id` (Feed über alle Fahrzeuge) und `TripCateg
 
 Neue Seiten `Fahrten`, `Wartung`, `Servicehistorie`, `Kosten`; die Übersicht zeigt die nächste Wartung, die Jahreskosten und Schnellerfassung. Initiales JS 125 KB gzip (Budget 300 KB).
 
+## Dokumente und Bilder (Teil 2)
+
+- Backend `internal/documents` (Schema `documents`): Dateien mit generierten Schlüsseln, Typ per Magic Bytes, SHA-256-Dubletten (200 mit vorhandener Datei), Vorschauen als JPEG ohne EXIF, Auslieferung mit `Content-Disposition`, `nosniff` und CSP-Sandbox (ADR-017/018); Dokumente mit mehreren Dateien, Anhänge an Service- und Kosteneinträge, Fahrzeugbilder mit Hauptbild.
+- Speicher: `VECTRA_STORAGE_DIR` (Container: Volume `/data`), Größe `VECTRA_MAX_UPLOAD_MB` (Standard 25).
+- Web: Seite „Dokumente“, Fahrzeugfoto auf der Fahrzeugkarte und der Übersicht, Anhänge in Servicehistorie und Kosten.
+- Android: alle Module dieser Iteration plus Dokumente und Fahrzeugfoto, siehe `10-android.md`.
+
 ## Annahmen und offene Punkte
 
 - Schwellen: Definition → Installationsvorgabe (30/7 Tage, 1 500/500 km). Eine Nutzereinstellung dazwischen folgt mit der Einstellungsseite.
 - Wertverlust bezieht sich auf die gesamte Besitzdauer; die Auswertung weist darauf hin.
-- Android: Fahrten, Service und Kosten mobil sind Teil von Iteration 6.
 - Benachrichtigungen bei Fälligkeit (MA-09) folgen mit Notifications in Iteration 4.
