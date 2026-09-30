@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -14,9 +15,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sh1su/vector/backend/internal/api"
+	"github.com/sh1su/vector/backend/internal/costs"
 	"github.com/sh1su/vector/backend/internal/identity"
+	"github.com/sh1su/vector/backend/internal/kernel"
+	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 )
 
@@ -25,6 +31,10 @@ type Deps struct {
 	Identity     *identity.Service
 	Vehicles     *vehicles.Service
 	Odometer     *odometer.Service
+	Costs        *costs.Service
+	Maintenance  *maintenance.Service
+	Service      *servicehistory.Service
+	Trips        *trips.Service
 	Log          *slog.Logger
 	CookieSecure bool
 	WebDir       string
@@ -43,6 +53,9 @@ var _ api.StrictServerInterface = (*Server)(nil)
 // Handler baut den vollständigen HTTP-Handler.
 func Handler(d Deps) http.Handler {
 	s := &Server{d: d}
+	if d.Trips != nil {
+		d.Trips.Unit = func(ctx context.Context, a kernel.Actor, meter string) string { return s.displayUnit(ctx, a, meter) }
+	}
 	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			problem.Write(w, problem.BadRequest("Der Request-Body ist ungültig."), requestID(r))

@@ -67,3 +67,12 @@ func MemberVehicles(ctx context.Context, db store.DBTX, accountID uuid.UUID) (ma
 	}
 	return out, nil
 }
+
+// DisplayName liefert den Anzeigenamen eines Kontos oder "" (für Auswertungen).
+func DisplayName(ctx context.Context, db store.DBTX, accountID uuid.UUID) string {
+	a, err := store.New(db).GetAccountByID(ctx, pgUUID(accountID))
+	if err != nil {
+		return ""
+	}
+	return a.DisplayName
+}

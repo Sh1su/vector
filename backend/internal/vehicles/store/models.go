@@ -22,6 +22,77 @@ type AuditEvent struct {
 	RequestID      pgtype.Text
 }
 
+type CostsEntry struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	Category         string
+	Title            string
+	IncurredOn       pgtype.Date
+	TimeZone         string
+	CoversFrom       pgtype.Date
+	CoversTo         pgtype.Date
+	AmountMinor      int64
+	Currency         string
+	RecurringPlanID  pgtype.UUID
+	PlanOccurrenceOn pgtype.Date
+	Note             string
+	Tags             []string
+	Origin           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+	RecordedAt       pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	Version          int32
+}
+
+type CostsLedger struct {
+	ID           pgtype.UUID
+	VehicleID    pgtype.UUID
+	SourceModule string
+	SourceID     pgtype.UUID
+	Category     string
+	CostKind     pgtype.Text
+	BookedOn     pgtype.Date
+	AmountMinor  int64
+	Currency     string
+	CoversFrom   pgtype.Date
+	CoversTo     pgtype.Date
+}
+
+type CostsOccurrenceDismissal struct {
+	PlanID    pgtype.UUID
+	DueOn     pgtype.Date
+	Reason    string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+}
+
+type CostsPlan struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	Category         string
+	Title            string
+	AmountMinor      int64
+	Currency         string
+	IntervalMonths   pgtype.Int4
+	IntervalDays     pgtype.Int4
+	FirstDueOn       pgtype.Date
+	EndsOn           pgtype.Date
+	RemindDaysBefore int32
+	Active           bool
+	Note             string
+	Origin           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+	RecordedAt       pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	Version          int32
+}
+
 type IdentityAccount struct {
 	ID            pgtype.UUID
 	Email         string
@@ -56,6 +127,54 @@ type IdentityVehicleMembership struct {
 	AccountID pgtype.UUID
 	Role      string
 	CreatedAt pgtype.Timestamptz
+}
+
+type MaintenanceCompletion struct {
+	ID             pgtype.UUID
+	ItemID         pgtype.UUID
+	VehicleID      pgtype.UUID
+	ServiceEntryID pgtype.UUID
+	Kind           string
+	CompletedOn    pgtype.Date
+	CompletedTotal pgtype.Int8
+	Reason         pgtype.Text
+	IdempotencyKey pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+}
+
+type MaintenanceItem struct {
+	ID                      pgtype.UUID
+	VehicleID               pgtype.UUID
+	Title                   string
+	Description             pgtype.Text
+	Category                string
+	ManufacturerRecommended bool
+	SourceDocumentID        pgtype.UUID
+	SourcePage              pgtype.Int4
+	ScheduleMode            string
+	IntervalMonths          pgtype.Int4
+	IntervalDays            pgtype.Int4
+	IntervalDistance        pgtype.Int8
+	AnchorDate              pgtype.Date
+	AnchorTotal             pgtype.Int8
+	DueDateOnce             pgtype.Date
+	DueTotalOnce            pgtype.Int8
+	UpcomingDays            pgtype.Int4
+	DueDays                 pgtype.Int4
+	UpcomingDistance        pgtype.Int8
+	DueDistance             pgtype.Int8
+	DistanceUnit            string
+	Active                  bool
+	Note                    string
+	Origin                  string
+	CreatedAt               pgtype.Timestamptz
+	CreatedBy               pgtype.UUID
+	UpdatedAt               pgtype.Timestamptz
+	UpdatedBy               pgtype.UUID
+	RecordedAt              pgtype.Timestamptz
+	DeletedAt               pgtype.Timestamptz
+	Version                 int32
 }
 
 type OdometerReading struct {
@@ -94,6 +213,94 @@ type OdometerSegment struct {
 	Note            string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       pgtype.UUID
+}
+
+type ServiceCostItem struct {
+	ID          pgtype.UUID
+	EntryID     pgtype.UUID
+	Position    int32
+	Kind        string
+	Label       pgtype.Text
+	AmountMinor int64
+}
+
+type ServiceEntry struct {
+	ID                pgtype.UUID
+	VehicleID         pgtype.UUID
+	Kind              string
+	Category          pgtype.Text
+	Title             string
+	Description       pgtype.Text
+	OccurredAt        pgtype.Timestamptz
+	TimeZone          string
+	TimePrecision     string
+	OdometerReadingID pgtype.UUID
+	Currency          string
+	ProviderName      pgtype.Text
+	InvoiceNumber     pgtype.Text
+	CostUnknown       bool
+	Note              string
+	Tags              []string
+	Origin            string
+	CreatedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedAt         pgtype.Timestamptz
+	UpdatedBy         pgtype.UUID
+	RecordedAt        pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	Version           int32
+}
+
+type ServicePartLine struct {
+	ID             pgtype.UUID
+	EntryID        pgtype.UUID
+	Position       int32
+	Name           string
+	PartNumber     pgtype.Text
+	Quantity       pgtype.Numeric
+	QuantityUnit   pgtype.Text
+	UnitPriceMinor pgtype.Int8
+	CostItemID     pgtype.UUID
+}
+
+type TripsCategory struct {
+	ID              pgtype.UUID
+	VehicleID       pgtype.UUID
+	Name            string
+	Kind            string
+	PurposeRequired bool
+	Active          bool
+	DefaultKey      pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	Version         int32
+}
+
+type TripsTrip struct {
+	ID              pgtype.UUID
+	RootID          pgtype.UUID
+	VehicleID       pgtype.UUID
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	TimeZone        string
+	StartReadingID  pgtype.UUID
+	EndReadingID    pgtype.UUID
+	StartLocation   pgtype.Text
+	EndLocation     pgtype.Text
+	Purpose         pgtype.Text
+	CategoryID      pgtype.UUID
+	DriverAccountID pgtype.UUID
+	Note            string
+	Status          string
+	SupersedesID    pgtype.UUID
+	ChangeReason    pgtype.Text
+	Origin          string
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedAt       pgtype.Timestamptz
+	UpdatedBy       pgtype.UUID
+	RecordedAt      pgtype.Timestamptz
+	Version         int32
 }
 
 type VehiclesVehicle struct {

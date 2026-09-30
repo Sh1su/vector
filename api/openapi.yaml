@@ -8722,6 +8722,10 @@ components:
           type: string
           format: uuid
           readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          description: entspricht dem ETag (ADR-012)
         name:
           type: string
           maxLength: 60
@@ -9151,6 +9155,10 @@ components:
         item_id:
           type: string
           format: uuid
+        vehicle_id:
+          type: string
+          format: uuid
+          description: Fahrzeug der Definition (für den Feed über alle Fahrzeuge)
         title:
           type: string
         level:

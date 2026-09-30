@@ -2766,6 +2766,8 @@ export interface components {
         TripCategory: {
             /** Format: uuid */
             readonly id?: string;
+            /** @description entspricht dem ETag (ADR-012) */
+            readonly version?: number;
             name: string;
             /** @enum {string} */
             kind: "private" | "business" | "commute" | "other";
@@ -2913,6 +2915,11 @@ export interface components {
         DueStatus: {
             /** Format: uuid */
             item_id: string;
+            /**
+             * Format: uuid
+             * @description Fahrzeug der Definition (für den Feed über alle Fahrzeuge)
+             */
+            vehicle_id?: string;
             title: string;
             level: components["schemas"]["DueLevel"];
             /** @enum {string|null} */

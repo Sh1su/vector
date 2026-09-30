@@ -29,6 +29,11 @@ type Meta struct {
 	Status           string
 	SaleDate         *time.Time
 	DisplayName      string
+	DefaultCurrency  string
+	PurchaseDate     *time.Time
+	Purchase         *Money
+	Sale             *Money
+	EstimatedValue   *DateMoney
 }
 
 // Service ist der Application Service des Moduls Vehicles.
@@ -507,9 +512,24 @@ func LoadMeta(ctx context.Context, db store.DBTX, id uuid.UUID, lock bool) (Meta
 		return Meta{}, err
 	}
 	m := Meta{ID: id, UsageMeter: v.UsageMeter, OdometerRequired: v.OdometerRequired, OwnerTimeZone: v.OwnerTimeZone, Status: v.Status, DisplayName: v.DisplayName}
+	m.DefaultCurrency = v.DefaultCurrency
 	if v.SaleDate.Valid {
 		t := v.SaleDate.Time
 		m.SaleDate = &t
+		if v.SaleAmount.Valid {
+			m.Sale = &Money{AmountMinor: v.SaleAmount.Int64, Currency: v.SaleCurrency.String}
+		}
+	}
+	if v.PurchaseDate.Valid {
+		t := v.PurchaseDate.Time
+		m.PurchaseDate = &t
+		if v.PurchaseAmount.Valid {
+			m.Purchase = &Money{AmountMinor: v.PurchaseAmount.Int64, Currency: v.PurchaseCurrency.String}
+		}
+	}
+	var ex extra
+	if json.Unmarshal(v.Extra, &ex) == nil {
+		m.EstimatedValue = ex.EstimatedValue
 	}
 	return m, nil
 }

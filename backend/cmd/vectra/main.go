@@ -14,11 +14,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sh1su/vector/backend/internal/costs"
 	"github.com/sh1su/vector/backend/internal/identity"
+	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/config"
 	"github.com/sh1su/vector/backend/internal/platform/db"
 	"github.com/sh1su/vector/backend/internal/server"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 	vstore "github.com/sh1su/vector/backend/internal/vehicles/store"
 )
@@ -58,10 +62,13 @@ func run(log *slog.Logger) error {
 		return odometer.HasReadings(ctx, q, id)
 	}
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: cfg.OdometerVMaxKmh})
+	deps := server.Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: costs.NewService(pool, odo),
+		Maintenance: maintenance.NewService(pool, odo), Service: servicehistory.NewService(pool, odo), Trips: trips.NewService(pool, odo),
+		Log: log, CookieSecure: cfg.CookieSecure, WebDir: cfg.WebDir}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.Handler(server.Deps{Identity: ids, Vehicles: veh, Odometer: odo, Log: log, CookieSecure: cfg.CookieSecure, WebDir: cfg.WebDir}),
+		Handler:           server.Handler(deps),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,

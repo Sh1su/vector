@@ -3154,6 +3154,9 @@ type DueStatus struct {
 	Level             DueLevel                                  `json:"level"`
 	ReasonTrigger     nullable.Nullable[DueStatusReasonTrigger] `json:"reason_trigger,omitempty"`
 	Title             string                                    `json:"title"`
+
+	// VehicleId Fahrzeug der Definition (für den Feed über alle Fahrzeuge)
+	VehicleId *openapi_types.UUID `json:"vehicle_id,omitempty"`
 }
 
 // DueStatusReasonTrigger defines model for DueStatus.ReasonTrigger.
@@ -4601,6 +4604,9 @@ type TripCategory struct {
 	Kind            TripCategoryKind    `json:"kind"`
 	Name            string              `json:"name"`
 	PurposeRequired *bool               `json:"purpose_required,omitempty"`
+
+	// Version entspricht dem ETag (ADR-012)
+	Version *int `json:"version,omitempty"`
 }
 
 // TripCategoryKind defines model for TripCategory.Kind.
