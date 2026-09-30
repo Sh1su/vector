@@ -4156,6 +4156,12 @@ paths:
             Location:
               schema:
                 type: string
+        '200':
+          description: 'Datei mit gleichem Inhalt existiert bereits (DO-02, `duplicate_of` gesetzt, nichts gespeichert) oder idempotente Wiederholung mit gleicher ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileMeta'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4287,10 +4293,10 @@ paths:
         '200':
           description: Erfolg
           content:
-            image/webp:
+            image/jpeg:
               schema:
                 type: string
-                contentMediaType: image/webp
+                contentMediaType: image/jpeg
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

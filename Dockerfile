@@ -15,13 +15,16 @@ ENV CGO_ENABLED=0 GOFLAGS=-mod=mod
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/vectra ./cmd/vectra
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/vectra ./cmd/vectra && mkdir -p /out/data/files
 
 FROM scratch
 COPY --from=backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=backend /out/vectra /vectra
 COPY --from=web /src/web/dist /web
-ENV VECTRA_WEB_DIR=/web VECTRA_LISTEN=:8080
+# Dateiablage (ADR-017): eigenes Volume, gehört dem Laufzeitnutzer
+COPY --from=backend --chown=65532:65532 /out/data /data
+ENV VECTRA_WEB_DIR=/web VECTRA_LISTEN=:8080 VECTRA_STORAGE_DIR=/data/files GOMEMLIMIT=100MiB
+VOLUME /data
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/vectra"]

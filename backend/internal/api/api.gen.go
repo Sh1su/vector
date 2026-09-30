@@ -24101,6 +24101,20 @@ type UploadFileResponseObject interface {
 	VisitUploadFileResponse(w http.ResponseWriter) error
 }
 
+type UploadFile200JSONResponse FileMeta
+
+func (response UploadFile200JSONResponse) VisitUploadFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UploadFile201ResponseHeaders struct {
 	ETag     *string
 	Location *string
@@ -24645,14 +24659,14 @@ type PreviewFileResponseObject interface {
 	VisitPreviewFileResponse(w http.ResponseWriter) error
 }
 
-type PreviewFile200ImagewebpResponse struct {
+type PreviewFile200ImagejpegResponse struct {
 	Body          io.Reader
 	ContentLength int64
 }
 
-func (response PreviewFile200ImagewebpResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
+func (response PreviewFile200ImagejpegResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
 
-	w.Header().Set("Content-Type", "image/webp")
+	w.Header().Set("Content-Type", "image/jpeg")
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
 	}

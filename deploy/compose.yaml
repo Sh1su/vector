@@ -29,6 +29,9 @@ services:
       VECTRA_DATABASE_URL: postgres://vectra:${POSTGRES_PASSWORD}@postgres:5432/vectra
       VECTRA_SETUP_TOKEN: ${VECTRA_SETUP_TOKEN:-}
       VECTRA_COOKIE_SECURE: "true"
+      VECTRA_MAX_UPLOAD_MB: ${VECTRA_MAX_UPLOAD_MB:-25}
+    volumes:
+      - files:/data   # Dokumente und Bilder (ADR-017), ins Backup aufnehmen
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -48,5 +51,6 @@ services:
 
 volumes:
   pgdata:
+  files:
   caddy_data:
   caddy_config:

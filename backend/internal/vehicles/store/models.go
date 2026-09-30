@@ -93,6 +93,76 @@ type CostsPlan struct {
 	Version          int32
 }
 
+type DocumentsAttachment struct {
+	ID         pgtype.UUID
+	VehicleID  pgtype.UUID
+	FileID     pgtype.UUID
+	DocumentID pgtype.UUID
+	TargetType string
+	TargetID   pgtype.UUID
+	Role       string
+	Page       pgtype.Int4
+	CreatedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	DeletedAt  pgtype.Timestamptz
+}
+
+type DocumentsDocument struct {
+	ID           pgtype.UUID
+	VehicleID    pgtype.UUID
+	DocType      string
+	Nature       string
+	Title        string
+	DocumentDate pgtype.Date
+	Issuer       pgtype.Text
+	Language     pgtype.Text
+	Note         string
+	Tags         []string
+	Origin       string
+	CreatedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedAt    pgtype.Timestamptz
+	UpdatedBy    pgtype.UUID
+	RecordedAt   pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	Version      int32
+}
+
+type DocumentsDocumentFile struct {
+	DocumentID pgtype.UUID
+	Position   int32
+	FileID     pgtype.UUID
+}
+
+type DocumentsFile struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	StorageKey       string
+	OriginalName     string
+	MediaType        string
+	SizeBytes        int64
+	Sha256           string
+	ReceivedAt       pgtype.Timestamptz
+	CapturedAtClient pgtype.Timestamptz
+	CaptureSource    pgtype.Text
+	Derivatives      []string
+	HasLocation      bool
+	SupersedesID     pgtype.UUID
+	ReplaceReason    pgtype.Text
+	UploadTimeOrigin string
+	CreatedBy        pgtype.UUID
+	DeletedAt        pgtype.Timestamptz
+}
+
+type DocumentsVehicleImage struct {
+	ID        pgtype.UUID
+	VehicleID pgtype.UUID
+	FileID    pgtype.UUID
+	IsPrimary bool
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+}
+
 type IdentityAccount struct {
 	ID            pgtype.UUID
 	Email         string

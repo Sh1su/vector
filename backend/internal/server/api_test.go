@@ -20,12 +20,14 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sh1su/vector/backend/internal/costs"
+	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/identity"
 	istore "github.com/sh1su/vector/backend/internal/identity/store"
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/db"
+	"github.com/sh1su/vector/backend/internal/platform/storage"
 	"github.com/sh1su/vector/backend/internal/servicehistory"
 	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
@@ -56,21 +58,24 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE documents.vehicle_image, documents.attachment, documents.document_file, documents.document, documents.file, costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ids := identity.NewService(pool, setupToken, log)
 	veh := vehicles.NewService(pool)
 	veh.Settings = ids.Settings
-	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) { return odometer.HasReadings(ctx, q, id) }
+	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) {
+		return odometer.HasReadings(ctx, q, id)
+	}
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: 250})
 	odo.Now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
 	now := func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
 	cs, ms, ss, ts := costs.NewService(pool, odo), maintenance.NewService(pool, odo), servicehistory.NewService(pool, odo), trips.NewService(pool, odo)
 	cs.Now, ms.Now, ss.Now, ts.Now = now, now, now, now
 	srv := httptest.NewServer(Handler(Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: cs, Maintenance: ms, Service: ss, Trips: ts,
-		Log: log, CookieSecure: false}))
+		Documents: documents.NewService(pool, storage.Local{Dir: t.TempDir()}, 2<<20),
+		Log:       log, CookieSecure: false}))
 	t.Cleanup(func() { srv.Close(); pool.Close() })
 	return &env{t: t, srv: srv, pool: pool}
 }

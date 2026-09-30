@@ -25,7 +25,7 @@ Danach `https://<VECTRA_DOMAIN>/einrichtung` öffnen und das erste Administrator
 
 - Selbst bauen statt ziehen: `docker compose build` (im Repository-Ordner `deploy/`).
 - Lokal ohne TLS: `docker compose run --rm -p 8080:8080 -e VECTRA_COOKIE_SECURE=false vectra` und `http://localhost:8080` öffnen.
-- Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump`.
+- Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump` und das Volume `files` (Dokumente, Fahrzeugbilder) sichern, z. B. `docker run --rm -v vectra_files:/data -v "$PWD":/b alpine tar czf /b/files.tgz -C /data .`.
 
 ## Nur im Heimnetz (eigener Reverse-Proxy, z. B. Nginx Proxy Manager)
 

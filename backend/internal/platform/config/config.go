@@ -14,6 +14,8 @@ type Config struct {
 	SetupToken      string
 	OdometerVMaxKmh int
 	WebDir          string // optional: statische Web-App ausliefern (Entwicklung/ohne Caddy)
+	StorageDir      string // Ablage der Dateien (ADR-017), nie im Web-Pfad
+	MaxUploadMB     int
 }
 
 func Load() (Config, error) {
@@ -24,6 +26,8 @@ func Load() (Config, error) {
 		SetupToken:      os.Getenv("VECTRA_SETUP_TOKEN"),
 		WebDir:          os.Getenv("VECTRA_WEB_DIR"),
 		OdometerVMaxKmh: 250,
+		StorageDir:      env("VECTRA_STORAGE_DIR", "./data/files"),
+		MaxUploadMB:     25,
 	}
 	if v := os.Getenv("VECTRA_ODOMETER_VMAX_KMH"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -31,6 +35,13 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("VECTRA_ODOMETER_VMAX_KMH: ungültig")
 		}
 		c.OdometerVMaxKmh = n
+	}
+	if v := os.Getenv("VECTRA_MAX_UPLOAD_MB"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 200 {
+			return c, fmt.Errorf("VECTRA_MAX_UPLOAD_MB: 1–200")
+		}
+		c.MaxUploadMB = n
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("VECTRA_DATABASE_URL fehlt")

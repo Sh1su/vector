@@ -18,6 +18,8 @@ const (
 	csrfCookie    = "vectra_csrf"
 	csrfHeader    = "X-CSRF-Token"
 	apiPrefix     = "/api/v1"
+	// maxUploadBody ist die harte Obergrenze eines Multipart-Bodys (Datei + Felder).
+	maxUploadBody = 256 << 20
 )
 
 // publicPaths sind die Operationen mit `security: []` in der Spezifikation.
@@ -91,10 +93,15 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// withBodyLimit begrenzt JSON-Bodies auf 1 MiB.
+// withBodyLimit begrenzt JSON-Bodies auf 1 MiB; Datei-Uploads (multipart) prüft
+// das Modul Documents selbst gegen sein Größenlimit, hier gilt eine Obergrenze.
 func withBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		limit := int64(1 << 20)
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			limit = maxUploadBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }

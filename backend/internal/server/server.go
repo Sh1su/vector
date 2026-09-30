@@ -16,6 +16,7 @@ import (
 
 	"github.com/sh1su/vector/backend/internal/api"
 	"github.com/sh1su/vector/backend/internal/costs"
+	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/identity"
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
@@ -35,6 +36,7 @@ type Deps struct {
 	Maintenance  *maintenance.Service
 	Service      *servicehistory.Service
 	Trips        *trips.Service
+	Documents    *documents.Service
 	Log          *slog.Logger
 	CookieSecure bool
 	WebDir       string

@@ -7404,6 +7404,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Datei mit gleichem Inhalt existiert bereits (DO-02, `duplicate_of` gesetzt, nichts gespeichert) oder idempotente Wiederholung mit gleicher ID */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileMeta"];
+                };
+            };
             /** @description Erfolg */
             201: {
                 headers: {
@@ -7521,7 +7530,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "image/webp": string;
+                    "image/jpeg": string;
                 };
             };
             401: components["responses"]["Unauthorized"];
