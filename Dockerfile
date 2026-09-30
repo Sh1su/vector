@@ -7,7 +7,7 @@ COPY web/ ./
 COPY api/ /src/api/
 RUN npm run build
 
-FROM golang:1.25-alpine AS backend
+FROM golang:1.26-alpine AS backend
 WORKDIR /src/backend
 ENV CGO_ENABLED=0 GOFLAGS=-mod=mod
 COPY backend/go.mod backend/go.sum ./

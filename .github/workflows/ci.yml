@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.25", cache-dependency-path: backend/go.sum }
+        with: { go-version: "1.26", cache-dependency-path: backend/go.sum }
       - name: Generierter Code ist aktuell (oapi-codegen, sqlc)
         run: |
           go generate ./internal/api/...
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: actions/setup-go@v5
-        with: { go-version: "1.25", cache-dependency-path: backend/go.sum }
+        with: { go-version: "1.26", cache-dependency-path: backend/go.sum }
       - uses: gradle/actions/setup-gradle@v4
       - name: Backend für den Integrationstest starten
         working-directory: backend
