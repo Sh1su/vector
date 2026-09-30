@@ -1,0 +1,10 @@
+# Lint-Konfiguration für api/openapi.yaml (ADR-014)
+extends:
+  - recommended
+rules:
+  # OIDC-Start und -Rückkehr antworten bestimmungsgemäß mit 302 (Weiterleitung), nicht mit 2xx.
+  operation-2xx-response: off
+  operation-4xx-response: error
+  no-unused-components: error
+  tag-description: error
+  security-defined: error
