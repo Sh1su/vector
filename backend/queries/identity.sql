@@ -61,3 +61,7 @@ UPDATE identity.account SET password_hash = $2, updated_at = now(), version = ve
 
 -- name: RevokeOtherSessions :exec
 UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL;
+
+-- name: VehicleOwnerSettings :one
+SELECT a.settings FROM identity.vehicle_membership m JOIN identity.account a ON a.id = m.account_id
+WHERE m.vehicle_id = $1 AND m.role = 'owner' LIMIT 1;

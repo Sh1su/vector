@@ -126,3 +126,22 @@ func TestPasswordAndSessions(t *testing.T) {
 	expect(t, app2.do("GET", "/me", nil), 401, "revoked")
 	expect(t, c.do("DELETE", "/me/sessions/"+id2, nil), 404, "revoke twice")
 }
+
+// MA-05: Schwellen aus den Einstellungen des Halters gelten für alle Definitionen ohne eigene Schwelle.
+func TestOwnerThresholdsFromSettings(t *testing.T) {
+	e := newEnv(t)
+	c := e.adminClient()
+	vid := c.do("POST", "/vehicles", vehiclePayload("Golf")).body["id"].(string)
+	anchor := time.Now().AddDate(0, -10, 0).Format(time.DateOnly)
+	r := c.do("POST", "/vehicles/"+vid+"/maintenance-items", map[string]any{"title": "Inspektion", "category": "service",
+		"schedule_mode": "from_last_completion", "interval_months": 12, "anchor_date": anchor})
+	expect(t, r, 201, "item")
+	if lvl := r.body["status"].(map[string]any)["level"]; lvl != "ok" {
+		t.Fatalf("default threshold: %v", lvl)
+	}
+	expect(t, c.do("PATCH", "/me/settings", map[string]any{"maintenance_thresholds": map[string]any{"upcoming_days": 90}}), 200, "settings")
+	st := c.do("GET", "/vehicles/"+vid+"/maintenance/status", nil).body["items"].([]any)[0].(map[string]any)
+	if st["level"] != "upcoming" {
+		t.Fatalf("owner threshold: %v", st)
+	}
+}

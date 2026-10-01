@@ -26,6 +26,9 @@ type Service struct {
 	pool *pgxpool.Pool
 	odo  *odometer.Service
 	Now  func() time.Time
+	// OwnerSettings liefert die Einstellungen des Fahrzeughalters; deren maintenance_thresholds
+	// ersetzen die Installationsvorgabe (MA-05: Definition → Halter → Installation).
+	OwnerSettings func(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) map[string]any
 }
 
 func NewService(pool *pgxpool.Pool, odo *odometer.Service) *Service {
@@ -134,9 +137,9 @@ func meta(r store.MaintenanceItem) kernel.EntityMeta {
 		CreatedBy: pg.ID(r.CreatedBy), UpdatedAt: &upd, UpdatedBy: &by, RecordedAt: &rec, Origin: r.Origin}
 }
 
-func domainItem(r store.MaintenanceItem, engineHours bool) Item {
+func domainItem(r store.MaintenanceItem, base Thresholds) Item {
 	it := Item{Mode: r.ScheduleMode, AnchorDate: pg.DateP(r.AnchorDate), AnchorTotal: pg.I8P(r.AnchorTotal), DueDateOnce: pg.DateP(r.DueDateOnce),
-		DueTotalOnce: pg.I8P(r.DueTotalOnce), Thresholds: DefaultThresholds(engineHours)}
+		DueTotalOnce: pg.I8P(r.DueTotalOnce), Thresholds: base}
 	if v := pg.I4P(r.IntervalMonths); v != nil {
 		it.Months = *v
 	}
@@ -459,6 +462,7 @@ func (s *Service) ListItems(ctx context.Context, actor kernel.Actor, vehicleID u
 
 type evalEnv struct {
 	Env
+	base  Thresholds
 	meta  vehicles.Meta
 	segs  odometer.Segments
 	valid []odometer.Reading
@@ -475,6 +479,10 @@ func (s *Service) env(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) (
 	}
 	now := s.Now()
 	e := evalEnv{Env: Env{Today: kernel.Today(now, meta.OwnerTimeZone)}, meta: meta, segs: segs, valid: valid}
+	e.base = DefaultThresholds(meta.UsageMeter == odometer.MeterEngineHours)
+	if s.OwnerSettings != nil {
+		e.base = ownerThresholds(e.base, s.OwnerSettings(ctx, db, vehicleID))
+	}
 	if cur := odometer.Current(valid, segs); cur.Kind != odometer.KindUnknown {
 		t := cur.Total
 		e.Current = &t
@@ -500,12 +508,11 @@ func (s *Service) evaluate(ctx context.Context, db store.DBTX, ev evalEnv, r sto
 		cs = append(cs, comp)
 	}
 	SortCompletions(cs)
-	engine := ev.meta.UsageMeter == odometer.MeterEngineHours
 	v := DueStatusView{ItemID: pg.ID(r.ID), VehicleID: pg.ID(r.VehicleID), Title: r.Title, Level: LevelUnknown}
 	if !r.Active {
 		return v, nil
 	}
-	st := Evaluate(domainItem(r, engine), cs, ev.Env)
+	st := Evaluate(domainItem(r, ev.base), cs, ev.Env)
 	v.Level = st.Level
 	if st.Reason != "" {
 		reason := st.Reason
@@ -513,7 +520,7 @@ func (s *Service) evaluate(ctx context.Context, db store.DBTX, ev evalEnv, r sto
 	}
 	v.DueDate, v.DaysRemaining, v.EstimatedDueDate, v.Estimated = dateStr(st.DueDate), st.DaysRemaining, dateStr(st.EstimatedDate), st.Estimated
 	cu := kernel.UnitMeter
-	if engine {
+	if ev.meta.UsageMeter == odometer.MeterEngineHours {
 		cu = kernel.UnitSecond
 	}
 	if st.DueTotal != nil {
@@ -805,4 +812,32 @@ func ServiceItemIDs(ctx context.Context, db store.DBTX, entryID uuid.UUID) ([]uu
 		out = append(out, pg.ID(r.ItemID))
 	}
 	return out, nil
+}
+
+// ownerThresholds übernimmt gesetzte Werte aus settings.maintenance_thresholds.
+func ownerThresholds(base Thresholds, settings map[string]any) Thresholds {
+	m, _ := settings["maintenance_thresholds"].(map[string]any)
+	if m == nil {
+		return base
+	}
+	if v, ok := m["upcoming_days"].(float64); ok && v >= 0 {
+		base.UpcomingDays = int(v)
+	}
+	if v, ok := m["due_days"].(float64); ok && v >= 0 {
+		base.DueDays = int(v)
+	}
+	dist := func(key string, dst *int64) {
+		q, _ := m[key].(map[string]any)
+		val, ok1 := q["value"].(float64)
+		unit, ok2 := q["unit"].(string)
+		if !ok1 || !ok2 || val < 0 {
+			return
+		}
+		if c, err := kernel.ToCanonical(val, unit); err == nil {
+			*dst = c.Canonical
+		}
+	}
+	dist("upcoming_distance", &base.UpcomingDistance)
+	dist("due_distance", &base.DueDistance)
+	return base
 }

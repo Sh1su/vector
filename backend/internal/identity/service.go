@@ -295,6 +295,18 @@ func (s *Service) Settings(ctx context.Context, id uuid.UUID) (map[string]any, e
 	return out, nil
 }
 
+// OwnerSettings liefert die Einstellungen des Fahrzeughalters (z. B. Wartungsschwellen als
+// Vorgabe für alle Definitionen des Fahrzeugs); leer, wenn es keinen Halter gibt.
+func (s *Service) OwnerSettings(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) map[string]any {
+	raw, err := store.New(db).VehicleOwnerSettings(ctx, pgUUID(vehicleID))
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+	return m
+}
+
 // PatchSettings wendet einen JSON Merge Patch (RFC 7396) an.
 func (s *Service) PatchSettings(ctx context.Context, id uuid.UUID, patch map[string]any) (map[string]any, error) {
 	cur, err := s.Settings(ctx, id)

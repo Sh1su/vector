@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/sh1su/vector/backend/internal/api"
 	"github.com/sh1su/vector/backend/internal/costs"
@@ -20,6 +21,7 @@ import (
 	"github.com/sh1su/vector/backend/internal/identity"
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
+	mstore "github.com/sh1su/vector/backend/internal/maintenance/store"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
 	"github.com/sh1su/vector/backend/internal/servicehistory"
@@ -57,6 +59,11 @@ func Handler(d Deps) http.Handler {
 	s := &Server{d: d}
 	if d.Trips != nil {
 		d.Trips.Unit = func(ctx context.Context, a kernel.Actor, meter string) string { return s.displayUnit(ctx, a, meter) }
+	}
+	if d.Maintenance != nil && d.Identity != nil {
+		d.Maintenance.OwnerSettings = func(ctx context.Context, db mstore.DBTX, vehicleID uuid.UUID) map[string]any {
+			return d.Identity.OwnerSettings(ctx, db, vehicleID)
+		}
 	}
 	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {

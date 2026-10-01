@@ -410,3 +410,15 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 	_, err := q.db.Exec(ctx, updatePasswordHash, arg.ID, arg.PasswordHash)
 	return err
 }
+
+const vehicleOwnerSettings = `-- name: VehicleOwnerSettings :one
+SELECT a.settings FROM identity.vehicle_membership m JOIN identity.account a ON a.id = m.account_id
+WHERE m.vehicle_id = $1 AND m.role = 'owner' LIMIT 1
+`
+
+func (q *Queries) VehicleOwnerSettings(ctx context.Context, vehicleID pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, vehicleOwnerSettings, vehicleID)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
+}
