@@ -57,6 +57,7 @@ export function SettingsPage() {
           {settings.data && <DefaultsSection settings={settings.data} />}
           {settings.data && <ThresholdsSection settings={settings.data} />}
           <SessionsSection />
+          <TokensSection />
         </div>
       </main>
     </>
@@ -266,6 +267,90 @@ function SessionsSection() {
         ))}
         {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
       </div>
+    </Section>
+  )
+}
+
+type ApiToken = Schemas['ApiToken']
+
+/** KI-Zugang: persönliche API-Tokens für den MCP-Server (ADR-032). */
+function TokensSection() {
+  const qc = useQueryClient()
+  const { vehicles } = useApp()
+  const tokens = useQuery({ queryKey: ['api-tokens'], queryFn: () => api.get<{ items: ApiToken[] }>('/me/api-tokens') })
+  const [name, setName] = useState('Claude Desktop')
+  const [write, setWrite] = useState(true)
+  const [days, setDays] = useState(90)
+  const [only, setOnly] = useState<string>('')
+  const [created, setCreated] = useState<ApiToken | null>(null)
+  const [copied, setCopied] = useState(false)
+  const create = useMutation({
+    mutationFn: () => api.post<ApiToken>('/me/api-tokens', {
+      name: name.trim(), scopes: write ? ['vehicles:read', 'entries:write'] : ['vehicles:read'],
+      vehicle_ids: only ? [only] : null, expires_at: new Date(Date.now() + days * 86400_000).toISOString(),
+    }),
+    onSuccess: (t) => { setCreated(t); setCopied(false); qc.invalidateQueries({ queryKey: ['api-tokens'] }) },
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => request('DELETE', `/me/api-tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-tokens'] }),
+  })
+  const url = `${location.origin}/api/v1/mcp`
+  const config = created ? JSON.stringify({ mcpServers: { vectra: { type: 'http', url, headers: { Authorization: `Bearer ${created.token}` } } } }, null, 2) : ''
+  const cli = created ? `claude mcp add --transport http vectra ${url} --header "Authorization: Bearer ${created.token}"` : ''
+  return (
+    <Section icon="sparkles" title="KI-Zugang (MCP)" sub="Claude Desktop, Claude Code und andere MCP-Clients greifen mit einem persönlichen Token auf deine Fahrzeuge zu">
+      <div className="flex flex-col">
+        {(tokens.data?.items ?? []).map((t, i) => (
+          <div key={t.id} className={`flex items-center gap-3 py-3 ${i ? 'border-t border-line' : ''}`}>
+            <span className="text-muted"><Icon name="key" /></span>
+            <div className="flex min-w-0 flex-grow flex-col">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">{t.name}
+                <Chip tone={t.scopes.includes('entries:write') ? 'warn' : 'info'}>{t.scopes.includes('entries:write') ? 'Lesen + Schreiben' : 'Nur lesen'}</Chip>
+              </div>
+              <div className="text-xs text-muted">gültig bis {fmtDate(t.expires_at, true)} · zuletzt genutzt {t.last_used_at ? fmtDate(t.last_used_at) : 'nie'}</div>
+            </div>
+            <Button variant="outline" disabled={revoke.isPending} onClick={() => revoke.mutate(t.id!)}>Widerrufen</Button>
+          </div>
+        ))}
+      </div>
+      {created ? (
+        <div className="flex flex-col gap-3 rounded-[12px] bg-ok-bg p-4 text-[13px]">
+          <div className="font-semibold text-ok">Token erstellt – es wird nur jetzt angezeigt.</div>
+          <code className="block break-all rounded-[8px] bg-card px-3 py-2 text-text">{created.token}</code>
+          <div className="text-text">Claude Code:</div>
+          <code className="block break-all rounded-[8px] bg-card px-3 py-2 text-text">{cli}</code>
+          <div className="text-text">MCP-Konfiguration (Clients mit HTTP-Transport):</div>
+          <pre className="m-0 overflow-x-auto rounded-[8px] bg-card px-3 py-2 text-text">{config}</pre>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { void navigator.clipboard?.writeText(created.token ?? ''); setCopied(true) }}>{copied ? 'Kopiert' : 'Token kopieren'}</Button>
+            <Button variant="ghost" onClick={() => setCreated(null)}>Fertig</Button>
+          </div>
+        </div>
+      ) : (
+        <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); create.mutate() }}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Name" htmlFor="t-name"><input id="t-name" required maxLength={100} className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Gültig" htmlFor="t-days">
+              <select id="t-days" className={inputClass} value={days} onChange={(e) => setDays(Number(e.target.value))}>
+                <option value={30}>30 Tage</option><option value={90}>90 Tage</option><option value={365}>1 Jahr</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Fahrzeuge" htmlFor="t-veh">
+            <select id="t-veh" className={inputClass} value={only} onChange={(e) => setOnly(e.target.value)}>
+              <option value="">Alle meine Fahrzeuge</option>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>Nur {v.display_name}</option>)}
+            </select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-teal" checked={write} onChange={(e) => setWrite(e.target.checked)} />
+            Einträge anlegen erlauben (Kilometerstand, Fahrten, Kosten …); der Client fragt vor jedem Aufruf nach</label>
+          <div className="flex items-center justify-between gap-3">
+            <Saved ok={false} error={create.error ? errorText(create.error) : undefined} />
+            <Button type="submit" icon="plus" disabled={create.isPending || !name.trim()}>Token erstellen</Button>
+          </div>
+        </form>
+      )}
     </Section>
   )
 }
