@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import app.vectra.android.feature.AssistantState
 import app.vectra.android.feature.Confirmation
 import app.vectra.android.feature.CostsState
 import app.vectra.android.feature.DocumentsState
@@ -73,6 +74,7 @@ sealed interface Route {
     data object Settings : Route
     data object Service : Route
     data object Documents : Route
+    data object Assistant : Route
 }
 
 private val attention = setOf(OutboxStatus.NEEDS_CONFIRMATION, OutboxStatus.CONFLICT, OutboxStatus.FAILED)
@@ -116,6 +118,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val costs = MutableStateFlow(CostsState())
     val trips = MutableStateFlow(TripsState())
     val documents = MutableStateFlow(DocumentsState())
+    val assistant = MutableStateFlow(AssistantState())
     val formError = MutableStateFlow<FormError?>(null)
     val busy = MutableStateFlow(false)
     var pickPurpose: PickPurpose = PickPurpose.Document
@@ -242,6 +245,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             costs.value = CostsState()
             trips.value = TripsState()
             documents.value = DocumentsState()
+            assistant.value = AssistantState()
             photoCache.clear()
             thumbCache.clear()
             vehicles.value = VehiclesState()
@@ -491,6 +495,115 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             documents.update { it.copy(uploading = false) }
         }
     }
+
+    // --- Assistent (ADR-026, ADR-032): nur online; Einträge als Vorschlag ---
+
+    fun openAssistant() {
+        open(Route.Assistant)
+        loadAssistant()
+    }
+
+    private fun loadAssistant() {
+        val repo = c.repository() ?: return
+        assistant.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val st = repo.api.assistantStatus()
+                var conv = assistant.value.conversationId
+                var msgs = assistant.value.messages
+                if (st.enabled && !st.consentRequired && conv == null) {
+                    conv = repo.api.conversations().firstOrNull()?.id
+                    if (conv != null) msgs = repo.api.assistantMessages(conv)
+                }
+                assistant.update { it.copy(status = st, conversationId = conv, messages = msgs, loading = false) }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                assistant.update { it.copy(loading = false, error = message(e)) }
+            }
+        }
+    }
+
+    fun assistantInput(text: String) = assistant.update { it.copy(input = text, error = null) }
+
+    /** Ergebnis der Spracherkennung an die Eingabe anhängen. */
+    fun onDictated(text: String) = assistant.update { s -> s.copy(input = listOf(s.input.trim(), text.trim()).filter { it.isNotEmpty() }.joinToString(" "), error = null) }
+
+    fun assistantConsent() {
+        val repo = c.repository() ?: return
+        val name = assistant.value.status?.chatProvider?.name ?: "Anthropic (Claude)"
+        viewModelScope.launch {
+            try {
+                repo.api.giveConsent(name)
+                loadAssistant()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                assistant.update { it.copy(error = message(e)) }
+            }
+        }
+    }
+
+    fun assistantNew() = assistant.update { it.copy(conversationId = null, messages = emptyList(), error = null, anomalies = emptyMap()) }
+
+    fun assistantSend() {
+        val repo = c.repository() ?: return
+        val text = assistant.value.input.trim()
+        if (text.isEmpty() || assistant.value.pendingText != null) return
+        assistant.update { it.copy(input = "", pendingText = text, progress = null, pendingProposals = emptyList(), error = null) }
+        viewModelScope.launch {
+            try {
+                val conv = assistant.value.conversationId ?: repo.api.createConversation(home.value.vehicle?.id).id!!
+                assistant.update { it.copy(conversationId = conv) }
+                repo.api.sendAssistantMessage(conv, text,
+                    onStatus = { t -> assistant.update { it.copy(progress = t) } },
+                    onProposal = { p -> assistant.update { it.copy(pendingProposals = it.pendingProposals + p) } })
+                val msgs = repo.api.assistantMessages(conv)
+                assistant.update { it.copy(messages = msgs, pendingText = null, progress = null, pendingProposals = emptyList()) }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                assistant.update { it.copy(pendingText = null, progress = null, pendingProposals = emptyList(), input = text, error = message(e)) }
+            }
+        }
+    }
+
+    private fun replaceProposal(p: app.vectra.core.model.Proposal) = assistant.update { s ->
+        s.copy(messages = s.messages.map { m -> m.copy(proposals = m.proposals.map { if (it.id == p.id) p else it }) })
+    }
+
+    fun confirmProposal(p: app.vectra.core.model.Proposal, reason: String?) {
+        val repo = c.repository() ?: return
+        val known = assistant.value.anomalies[p.id].orEmpty()
+        assistant.update { it.copy(busyProposal = p.id, error = null) }
+        viewModelScope.launch {
+            try {
+                val body = if (known.isNotEmpty() && reason != null) app.vectra.core.model.ProposalConfirm(known.map { it.code }, reason) else app.vectra.core.model.ProposalConfirm()
+                val r = repo.api.confirmProposal(p.id, body)
+                replaceProposal(r)
+                assistant.update { it.copy(busyProposal = null, anomalies = it.anomalies - p.id) }
+                refresh()
+            } catch (e: ApiException) {
+                val an = e.problem?.anomalies.orEmpty()
+                assistant.update { it.copy(busyProposal = null, anomalies = if (an.isNotEmpty()) it.anomalies + (p.id to an) else it.anomalies,
+                    error = if (an.isEmpty()) problemText(e) else null) }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                assistant.update { it.copy(busyProposal = null, error = message(e)) }
+            }
+        }
+    }
+
+    fun rejectProposal(p: app.vectra.core.model.Proposal) {
+        val repo = c.repository() ?: return
+        viewModelScope.launch {
+            try {
+                replaceProposal(repo.api.rejectProposal(p.id))
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                assistant.update { it.copy(error = message(e)) }
+            }
+        }
+    }
+
+    fun assistantError(msg: String) = assistant.update { it.copy(error = msg) }
 
     private fun fail(msg: String) {
         home.update { it.copy(loading = false, error = msg) }

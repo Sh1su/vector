@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import app.vectra.android.feature.ApplyBookDialog
+import app.vectra.android.feature.AssistantScreen
+import app.vectra.android.feature.AssistantState
 import app.vectra.android.feature.CostsScreen
 import app.vectra.android.feature.CostsState
 import app.vectra.android.feature.DocumentsScreen
@@ -40,7 +42,12 @@ import app.vectra.android.feature.VehiclesState
 import app.vectra.android.ui.Tab
 import app.vectra.android.ui.TabBar
 import app.vectra.android.ui.VectraTheme
+import app.vectra.core.model.Anomaly
+import app.vectra.core.model.AssistantMessage
+import app.vectra.core.model.AssistantStatus
+import app.vectra.core.model.ChatProvider
 import app.vectra.core.model.CostCurrencyReport
+import app.vectra.core.model.Proposal
 import app.vectra.core.model.CostEntry
 import app.vectra.core.model.CostGroup
 import app.vectra.core.model.CostOccurrence
@@ -137,6 +144,17 @@ fun main(args: Array<String>) {
         "home-attention" to { Phone(Tab.Home) { HomeScreen(HomeState(golf, current, readings.take(2), listOf(p1, offline), loading = false), { Image(logo("vectra-schriftzug-negativ.png"), "Vectra", Modifier.width(109.dp).height(26.dp)) }, {}, {}, {}, {}, {}) } },
         "odometer" to { Phone(Tab.More) { OdometerScreen(OdometerState(golf, current, readings, listOf("Apr", "Mai", "Jun", "Jul", "Aug", "Sep").zip(listOf(910.0, 1240.0, 1480.0, 2210.0, 1030.0, 842.0)).map { MonthBar(it.first, it.second) }, listOf(p1, offline), loading = false), {}, {}, {}) } },
         "pending-dialog" to { PendingDialog(p1, {}, { _, _ -> }, {}, {}, onCorrect = {}) },
+        "assistant" to { Phone(null) { AssistantScreen(AssistantState(status = AssistantStatus(true, true, false, ChatProvider("Anthropic (Claude)"), "claude-sonnet-4-5", true),
+            conversationId = "c1", loading = false, messages = listOf(
+                AssistantMessage("m1", "user", "Ich fahre jetzt los, Kilometerstand 52.340, Kundentermin bei Müller"),
+                AssistantMessage("m2", "assistant", "Ich habe die Fahrt bei 52.340 km als Geschäftsfahrt vorbereitet – bitte bestätigen.",
+                    listOf(Proposal("p1", "startTrip", "v1", "Fahrt starten bei 52.340 km · Geschäftlich · Kundentermin Müller", status = "pending"))),
+                AssistantMessage("m3", "user", "Stand 40.000"),
+                AssistantMessage("m4", "assistant", "Bitte bestätigen.", listOf(Proposal("p2", "createOdometerReading", "v1", "Kilometerstand 40.000 km für Octavia", status = "pending"))),
+            ), anomalies = mapOf("p2" to listOf(Anomaly("P1", true, "Der Stand ist kleiner als der vorige Messpunkt (52.340 km)."))),
+            input = "Bin angekommen, Stand 52.398"), {}, {}, {}, {}, {}, {}, { _, _ -> }, {}) } },
+        "assistant-consent" to { Phone(null) { AssistantScreen(AssistantState(status = AssistantStatus(true, false, true, ChatProvider("Anthropic (Claude)"), "claude-sonnet-4-5", true), loading = false),
+            {}, {}, {}, null, {}, {}, { _, _ -> }, {}) } },
         "book-dialog" to { ApplyBookDialog(books, golf.copy(make = "Hyundai", model = "Tucson", firstRegistration = "2024-05-15"), 21_800.0, null, false, {}, { _, _, _, _ -> }) },
         "vehicles" to { Phone(Tab.More) { VehiclesScreen(VehiclesState(listOf(golf, transit), mapOf("v1" to "143.520 km", "v2" to "88.210 km"), "v1", loading = false), {}, {}) } },
         "more" to { Phone(Tab.More) { MoreScreen {} } },

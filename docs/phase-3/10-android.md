@@ -43,6 +43,12 @@ Die Screens sind zustandslos und plattformneutral (`app/src/main/kotlin/app/vect
 - **Rückfragen als Hinweis-Box:** Hat die Synchronisierung eine Rückfrage (Befund nach ADR-010, Konflikt, abgelehnter Eintrag), öffnet sich der Dialog von selbst. Der Nutzer antwortet: *Der Wert stimmt so* (mit Begründung), *Wert korrigieren* (neuer Stand, neue ID, wird neu geprüft – `Outbox.amendValue`), *Verwerfen* oder *Später entscheiden*.
 - **Wartungsbuch übernehmen:** auf dem Wartungs-Tab; Modell wird nach Marke/Modell vorgewählt.
 
+## Assistent
+
+- Übersicht → „Mit dem Assistenten sprechen“ bzw. Mehr → Assistent: Chat mit Claude (ADR-032), Antworten als Stream mit Zwischenschritten.
+- Mikrofon: Spracherkennung von Android (`RecognizerIntent`, Deutsch); Diktier-Tastaturen wie Wispr Flow funktionieren im Eingabefeld.
+- Vorschläge erscheinen als Karten mit **Bestätigen/Verwerfen**; bei Befunden mit Begründungsfeld. Nur online.
+
 ## Prüfung
 
 | Prüfung | Ergebnis in dieser Umgebung |

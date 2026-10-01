@@ -1,6 +1,13 @@
 package app.vectra.core.net
 
 import app.vectra.core.model.Account
+import app.vectra.core.model.AssistantConsent
+import app.vectra.core.model.AssistantMessage
+import app.vectra.core.model.AssistantStatus
+import app.vectra.core.model.Conversation
+import app.vectra.core.model.Proposal
+import app.vectra.core.model.ProposalConfirm
+import app.vectra.core.model.StatusText
 import app.vectra.core.model.CompletionCreate
 import app.vectra.core.model.CostEntry
 import app.vectra.core.model.CostEntryCreate
@@ -238,6 +245,69 @@ class ApiClient(
         withContext(Dispatchers.IO) {
             val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/vehicles/$vehicleId/files/$fileId/preview?size=$size").toHttpUrl())
             http.newCall(b.build()).execute().use { resp -> if (resp.isSuccessful) resp.body?.bytes() else null }
+        }
+
+    // --- Assistent ---
+
+    suspend fun assistantStatus(): AssistantStatus = call("GET", "/assistant/status", AssistantStatus.serializer())
+
+    suspend fun giveConsent(providerName: String): AssistantStatus =
+        call("POST", "/assistant/consent", AssistantStatus.serializer(), encode(AssistantConsent(true, providerName)))
+
+    suspend fun conversations(): List<Conversation> =
+        call("GET", "/assistant/conversations", Page.serializer(Conversation.serializer())).items
+
+    suspend fun createConversation(vehicleId: String?): Conversation =
+        call("POST", "/assistant/conversations", Conversation.serializer(), encode(Conversation(vehicleId = vehicleId)))
+
+    suspend fun assistantMessages(conversationId: String): List<AssistantMessage> =
+        call("GET", "/assistant/conversations/$conversationId/messages", Page.serializer(AssistantMessage.serializer())).items
+
+    suspend fun confirmProposal(id: String, body: ProposalConfirm = ProposalConfirm()): Proposal =
+        call("POST", "/assistant/proposals/$id/confirm", Proposal.serializer(), encode(body))
+
+    suspend fun rejectProposal(id: String): Proposal = call("POST", "/assistant/proposals/$id/reject", Proposal.serializer(), "{}")
+
+    /**
+     * Nachricht senden. Die Antwort kommt als Server-Sent Events: status (Zwischenschritt), proposal
+     * (Vorschlag), message (fertige Antwort) oder error (Problem Details).
+     */
+    suspend fun sendAssistantMessage(conversationId: String, text: String, onStatus: (String) -> Unit, onProposal: (Proposal) -> Unit): AssistantMessage =
+        withContext(Dispatchers.IO) {
+            val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/assistant/conversations/$conversationId/messages").toHttpUrl())
+                .header("Accept", "text/event-stream").post(encode(AssistantMessage(text = text)).toRequestBody("application/json".toMediaType()))
+            cookies.value(SessionCookieJar.CSRF_COOKIE)?.let { b.header("X-CSRF-Token", it) }
+            val client = http.newBuilder().readTimeout(java.time.Duration.ofMinutes(5)).build()
+            client.newCall(b.build()).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    throw ApiException(resp.code, runCatching { VectraJson.decodeFromString(Problem.serializer(), body) }.getOrNull())
+                }
+                val source = resp.body!!.source()
+                var event = "message"
+                val data = StringBuilder()
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    when {
+                        line.startsWith("event: ") -> event = line.removePrefix("event: ")
+                        line.startsWith("data: ") -> data.append(line.removePrefix("data: "))
+                        line.isEmpty() && data.isNotEmpty() -> {
+                            val json = data.toString()
+                            data.clear()
+                            when (event) {
+                                "status" -> runCatching { onStatus(VectraJson.decodeFromString(StatusText.serializer(), json).text) }
+                                "proposal" -> runCatching { onProposal(VectraJson.decodeFromString(Proposal.serializer(), json)) }
+                                "error" -> {
+                                    val p = runCatching { VectraJson.decodeFromString(Problem.serializer(), json) }.getOrNull()
+                                    throw ApiException(p?.status ?: 500, p)
+                                }
+                                "message" -> return@withContext VectraJson.decodeFromString(AssistantMessage.serializer(), json)
+                            }
+                        }
+                    }
+                }
+                throw java.io.IOException("Die Antwort des Assistenten brach ab.")
+            }
         }
 
     private fun q(s: String) = URLEncoder.encode(s, Charsets.UTF_8)

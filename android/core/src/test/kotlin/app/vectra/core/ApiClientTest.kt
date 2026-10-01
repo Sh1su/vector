@@ -90,4 +90,24 @@ class ApiClientTest {
         // Ohne Server-Adresse bleibt sie unbekannt, bis eine Anfrage sie lädt
         assertTrue(!SessionCookieJar(storage).hasSession)
     }
+
+    @Test
+    fun `Assistent-Antwort als Server-Sent Events`() = runTest {
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+            "event: status\ndata: {\"text\":\"Lese Fahrzeuge …\"}\n\n" +
+                "event: proposal\ndata: {\"id\":\"p1\",\"operation\":\"startTrip\",\"vehicle_id\":\"v1\",\"summary\":\"Fahrt starten\",\"body\":{},\"status\":\"pending\",\"expires_at\":\"2026-10-01T12:00:00Z\"}\n\n" +
+                "event: message\ndata: {\"id\":\"m1\",\"role\":\"assistant\",\"text\":\"Bitte bestätigen.\",\"proposals\":[]}\n\n"))
+        val status = mutableListOf<String>()
+        val proposals = mutableListOf<String>()
+        val m = api.sendAssistantMessage("c1", "Ich fahre los", { status += it }, { proposals += it.id })
+        assertEquals("Bitte bestätigen.", m.text)
+        assertEquals(listOf("Lese Fahrzeuge …"), status)
+        assertEquals(listOf("p1"), proposals)
+        assertEquals("/api/v1/assistant/conversations/c1/messages", server.takeRequest().path)
+
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+            "event: error\ndata: {\"type\":\"x\",\"title\":\"KI-Anbieter\",\"status\":502,\"detail\":\"nicht erreichbar\"}\n\n"))
+        val e = assertThrows<ApiException> { api.sendAssistantMessage("c1", "x", {}, {}) }
+        assertEquals(502, e.status)
+    }
 }

@@ -61,6 +61,7 @@ fun HomeScreen(
     onCosts: () -> Unit = {},
     onTrips: () -> Unit = {},
     onDocuments: () -> Unit = {},
+    onAssistant: (() -> Unit)? = null,
 ) {
     val c = V.colors
     val v = state.vehicle
@@ -137,6 +138,9 @@ fun HomeScreen(
                         QuickTile(VIcons.wrench, "Wartung", Modifier.weight(1f), if (v != null) onMaintenance else null)
                         QuickTile(VIcons.euro, "Kosten", Modifier.weight(1f), if (v != null) onCosts else null)
                         QuickTile(VIcons.scan, "Beleg", Modifier.weight(1f), if (v?.canEdit == true) onDocuments else null)
+                    }
+                    if (onAssistant != null) {
+                        VButton("Mit dem Assistenten sprechen", onAssistant, Modifier.fillMaxWidth(), kind = ButtonKind.Navy, icon = VIcons.mic, height = 48.dp)
                     }
                 }
                 SectionTitle("Zuletzt erfasst") {

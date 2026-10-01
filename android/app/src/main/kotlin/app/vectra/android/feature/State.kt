@@ -139,3 +139,19 @@ data class DocumentsState(
     val loading: Boolean = true,
     val error: String? = null,
 )
+
+/** Chat mit dem Assistenten (ADR-026: Einträge nur als Vorschlag, Bestätigung durch den Nutzer). */
+data class AssistantState(
+    val status: app.vectra.core.model.AssistantStatus? = null,
+    val conversationId: String? = null,
+    val messages: List<app.vectra.core.model.AssistantMessage> = emptyList(),
+    val pendingText: String? = null,
+    val progress: String? = null,
+    val pendingProposals: List<app.vectra.core.model.Proposal> = emptyList(),
+    val input: String = "",
+    val loading: Boolean = true,
+    val error: String? = null,
+    /** Befunde je Vorschlag, die vor dem Speichern eine Begründung brauchen. */
+    val anomalies: Map<String, List<app.vectra.core.model.Anomaly>> = emptyMap(),
+    val busyProposal: String? = null,
+)

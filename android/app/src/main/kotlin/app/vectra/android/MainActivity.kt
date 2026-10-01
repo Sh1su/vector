@@ -1,9 +1,12 @@
 package app.vectra.android
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,6 +40,7 @@ import app.vectra.android.feature.AddDocumentDialog
 import app.vectra.android.feature.AddReadingDialog
 import app.vectra.android.feature.AddServiceDialog
 import app.vectra.android.feature.ApplyBookDialog
+import app.vectra.android.feature.AssistantScreen
 import app.vectra.android.feature.CompleteDialog
 import app.vectra.android.feature.ConfirmDialog
 import app.vectra.android.feature.CostsScreen
@@ -102,6 +106,21 @@ private fun AppRoot(vm: MainViewModel) {
         uri?.let { readPicked(context, it) }?.let(vm::onPicked)
     }
     fun pickDocument() { vm.pickPurpose = PickPurpose.Document; picker.launch("*/*") }
+    // Spracherkennung des Systems (offline je nach Gerät); das Ergebnis landet im Eingabefeld des Assistenten.
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::onDictated)
+    }
+    fun dictate() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Was möchtest du eintragen?")
+        try {
+            speech.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            vm.assistantError("Auf diesem Gerät ist keine Spracherkennung verfügbar. Diktier-Apps wie Wispr Flow funktionieren über die Tastatur.")
+        }
+    }
 
     BackHandler(enabled = vm.canGoBack) { vm.back() }
 
@@ -139,6 +158,7 @@ private fun AppRoot(vm: MainViewModel) {
                             onCosts = { vm.selectTab(Tab.Costs) },
                             onTrips = { vm.selectTab(Tab.Trips) },
                             onDocuments = { vm.open(Route.Documents) },
+                            onAssistant = vm::openAssistant,
                         )
                     }
                     Tab.Trips -> {
@@ -159,6 +179,7 @@ private fun AppRoot(vm: MainViewModel) {
                             MoreTarget.Odometer -> vm.open(Route.Odometer)
                             MoreTarget.Service -> vm.open(Route.Service)
                             MoreTarget.Documents -> vm.open(Route.Documents)
+                            MoreTarget.Assistant -> vm.openAssistant()
                             MoreTarget.Settings -> vm.open(Route.Settings)
                         }
                     }
@@ -183,6 +204,13 @@ private fun AppRoot(vm: MainViewModel) {
                     val s by vm.maintenance.collectAsStateWithLifecycle()
                     ServiceScreen(s, onBack = vm::back, onAdd = { vm.openDialog(DialogState.AddService) })
                 }
+                Route.Assistant -> {
+                    val s by vm.assistant.collectAsStateWithLifecycle()
+                    AssistantScreen(
+                        s, onBack = vm::back, onInput = vm::assistantInput, onSend = vm::assistantSend, onMic = { dictate() },
+                        onConsent = vm::assistantConsent, onNew = vm::assistantNew, onConfirm = vm::confirmProposal, onReject = vm::rejectProposal,
+                    )
+                }
                 Route.Documents -> {
                     val s by vm.documents.collectAsStateWithLifecycle()
                     DocumentsScreen(s, onBack = vm::back, onUpload = { pickDocument() })
@@ -206,7 +234,7 @@ private fun AppRoot(vm: MainViewModel) {
                 Note(NoteKind.Info, msg, Modifier.align(Alignment.BottomCenter).padding(16.dp), icon = VIcons.sync)
             }
         }
-        TabBar(activeTab, vm::selectTab)
+        if (route != Route.Assistant) TabBar(activeTab, vm::selectTab)
     }
 
     when (val d = dialog) {

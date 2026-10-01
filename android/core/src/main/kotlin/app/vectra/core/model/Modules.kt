@@ -265,3 +265,53 @@ data class VehicleImage(val id: String, @SerialName("file_id") val fileId: Strin
 
 @Serializable
 data class VehicleImageCreate(@SerialName("file_id") val fileId: String, val primary: Boolean = true)
+
+// --- Assistent (ADR-024, ADR-026, ADR-032) ---
+
+@Serializable
+data class ChatProvider(val name: String, val external: Boolean = true)
+
+@Serializable
+data class AssistantStatus(
+    val enabled: Boolean = false,
+    @SerialName("user_enabled") val userEnabled: Boolean = false,
+    @SerialName("consent_required") val consentRequired: Boolean = true,
+    @SerialName("chat_provider") val chatProvider: ChatProvider? = null,
+    val model: String? = null,
+    @SerialName("web_search") val webSearch: Boolean = false,
+)
+
+@Serializable
+data class AssistantConsent(@SerialName("accept_external_provider") val accept: Boolean, @SerialName("provider_name") val providerName: String)
+
+@Serializable
+data class Conversation(val id: String? = null, @SerialName("vehicle_id") val vehicleId: String? = null, val title: String? = null)
+
+@Serializable
+data class Proposal(
+    val id: String,
+    val operation: String,
+    @SerialName("vehicle_id") val vehicleId: String,
+    val summary: String? = null,
+    val anomalies: List<Anomaly> = emptyList(),
+    val status: String,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+@Serializable
+data class AssistantMessage(
+    val id: String? = null,
+    val role: String = "assistant",
+    val text: String,
+    val proposals: List<Proposal> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+@Serializable
+data class ProposalConfirm(
+    @SerialName("confirm_anomalies") val confirmAnomalies: List<String>? = null,
+    @SerialName("anomaly_reason") val anomalyReason: String? = null,
+)
+
+@Serializable
+data class StatusText(val text: String)

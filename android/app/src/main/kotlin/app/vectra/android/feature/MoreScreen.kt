@@ -25,7 +25,7 @@ import app.vectra.android.ui.V
 import app.vectra.android.ui.VIcons
 import app.vectra.android.ui.VType
 
-enum class MoreTarget { Vehicles, Odometer, Service, Documents, Settings }
+enum class MoreTarget { Vehicles, Odometer, Service, Documents, Assistant, Settings }
 
 private data class Tile(val icon: ImageVector, val label: String, val desc: String, val target: MoreTarget?)
 
@@ -36,6 +36,7 @@ private val tiles = listOf(
     Tile(VIcons.oil, "Öl", "Ölstand, Nachfüllen, Verbrauch", null),
     Tile(VIcons.receipt, "Servicehistorie", "Werkstatt, Teile, Arbeit, Belege", MoreTarget.Service),
     Tile(VIcons.doc, "Dokumente", "Handbuch, Rechnungen, HU-Berichte", MoreTarget.Documents),
+    Tile(VIcons.sparkles, "Assistent", "Sprechen statt tippen: Fahrten, Stände, Wartung", MoreTarget.Assistant),
     Tile(VIcons.gear, "Einstellungen", "Konto, Darstellung, Synchronisation", MoreTarget.Settings),
 )
 
