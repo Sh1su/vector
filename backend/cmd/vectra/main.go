@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sh1su/vector/backend/internal/assistant"
 	"github.com/sh1su/vector/backend/internal/costs"
 	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/identity"
@@ -67,7 +68,12 @@ func run(log *slog.Logger) error {
 	deps := server.Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: costs.NewService(pool, odo),
 		Maintenance: maintenance.NewService(pool, odo), Service: servicehistory.NewService(pool, odo), Trips: trips.NewService(pool, odo),
 		Documents: documents.NewService(pool, storage.Local{Dir: cfg.StorageDir}, int64(cfg.MaxUploadMB)<<20),
-		Log:       log, CookieSecure: cfg.CookieSecure, WebDir: cfg.WebDir}
+		Assistant: assistant.NewService(pool, assistant.Config{Provider: cfg.Assistant.Provider, APIKey: cfg.Assistant.APIKey, Model: cfg.Assistant.Model,
+			BaseURL: cfg.Assistant.BaseURL, WebSearch: cfg.Assistant.WebSearch, DailyLimit: cfg.Assistant.DailyLimit, RetentionDays: cfg.Assistant.RetentionDays}),
+		Log: log, CookieSecure: cfg.CookieSecure, WebDir: cfg.WebDir}
+	if cfg.Assistant.Provider != "" {
+		log.Info("Assistent aktiv", "provider", cfg.Assistant.Provider, "model", cfg.Assistant.Model, "web_search", cfg.Assistant.WebSearch)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

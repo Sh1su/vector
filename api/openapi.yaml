@@ -11813,6 +11813,17 @@ components:
           - string
           - 'null'
           format: date-time
+        model:
+          type:
+          - string
+          - 'null'
+          description: konfiguriertes Sprachmodell, z. B. claude-sonnet-4-5
+        web_search:
+          type: boolean
+          description: Websuche für öffentliche Herstellerangaben (ADR-032)
+        mcp_url:
+          type: string
+          description: Adresse des MCP-Servers für externe KI-Clients (Anmeldung mit API-Token)
       required:
       - enabled
       - user_enabled
@@ -11881,6 +11892,9 @@ components:
           type: string
           examples:
           - createOilEntry
+        summary:
+          type: string
+          description: Kurzbeschreibung für die Bestätigung, z. B. „Fahrt starten bei 143.520 km · Geschäftlich“
         vehicle_id:
           type: string
           format: uuid

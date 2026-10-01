@@ -70,6 +70,44 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (IdentityA
 	return i, err
 }
 
+const getActiveApiToken = `-- name: GetActiveApiToken :one
+SELECT t.id, t.account_id, t.name, t.token_hash, t.scopes, t.vehicle_ids, t.expires_at, t.created_at, t.last_used_at, t.revoked_at, a.is_admin FROM identity.api_token t JOIN identity.account a ON a.id = t.account_id
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND a.status = 'active'
+`
+
+type GetActiveApiTokenRow struct {
+	ID         pgtype.UUID
+	AccountID  pgtype.UUID
+	Name       string
+	TokenHash  []byte
+	Scopes     []string
+	VehicleIds []pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+	IsAdmin    bool
+}
+
+func (q *Queries) GetActiveApiToken(ctx context.Context, tokenHash []byte) (GetActiveApiTokenRow, error) {
+	row := q.db.QueryRow(ctx, getActiveApiToken, tokenHash)
+	var i GetActiveApiTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.TokenHash,
+		&i.Scopes,
+		&i.VehicleIds,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
 const getActiveSession = `-- name: GetActiveSession :one
 SELECT s.id, s.account_id, s.csrf_token, s.client_kind, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
 FROM identity.session s
@@ -162,6 +200,47 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (I
 	return i, err
 }
 
+const insertApiToken = `-- name: InsertApiToken :one
+INSERT INTO identity.api_token (id, account_id, name, token_hash, scopes, vehicle_ids, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, account_id, name, token_hash, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at
+`
+
+type InsertApiTokenParams struct {
+	ID         pgtype.UUID
+	AccountID  pgtype.UUID
+	Name       string
+	TokenHash  []byte
+	Scopes     []string
+	VehicleIds []pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+}
+
+func (q *Queries) InsertApiToken(ctx context.Context, arg InsertApiTokenParams) (IdentityApiToken, error) {
+	row := q.db.QueryRow(ctx, insertApiToken,
+		arg.ID,
+		arg.AccountID,
+		arg.Name,
+		arg.TokenHash,
+		arg.Scopes,
+		arg.VehicleIds,
+		arg.ExpiresAt,
+	)
+	var i IdentityApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.TokenHash,
+		&i.Scopes,
+		&i.VehicleIds,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const insertMembership = `-- name: InsertMembership :exec
 INSERT INTO identity.vehicle_membership (vehicle_id, account_id, role) VALUES ($1, $2, $3)
 `
@@ -205,6 +284,41 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 		arg.AbsoluteExpiresAt,
 	)
 	return err
+}
+
+const listApiTokens = `-- name: ListApiTokens :many
+SELECT id, account_id, name, token_hash, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC
+`
+
+func (q *Queries) ListApiTokens(ctx context.Context, accountID pgtype.UUID) ([]IdentityApiToken, error) {
+	rows, err := q.db.Query(ctx, listApiTokens, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentityApiToken
+	for rows.Next() {
+		var i IdentityApiToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Name,
+			&i.TokenHash,
+			&i.Scopes,
+			&i.VehicleIds,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMemberVehicleIDs = `-- name: ListMemberVehicleIDs :many
@@ -285,6 +399,23 @@ func (q *Queries) MarkLogin(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const revokeApiToken = `-- name: RevokeApiToken :execrows
+UPDATE identity.api_token SET revoked_at = now() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeApiTokenParams struct {
+	ID        pgtype.UUID
+	AccountID pgtype.UUID
+}
+
+func (q *Queries) RevokeApiToken(ctx context.Context, arg RevokeApiTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeApiToken, arg.ID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeOtherSessions = `-- name: RevokeOtherSessions :exec
 UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL
 `
@@ -322,6 +453,15 @@ UPDATE identity.session SET revoked_at = now() WHERE id = $1 AND revoked_at IS N
 
 func (q *Queries) RevokeSession(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, revokeSession, id)
+	return err
+}
+
+const touchApiToken = `-- name: TouchApiToken :exec
+UPDATE identity.api_token SET last_used_at = now() WHERE id = $1
+`
+
+func (q *Queries) TouchApiToken(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchApiToken, id)
 	return err
 }
 

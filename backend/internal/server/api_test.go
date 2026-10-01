@@ -45,7 +45,10 @@ type env struct {
 	pool *pgxpool.Pool
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// newEnvWith erlaubt Tests, Abhängigkeiten zu ergänzen (z. B. den Assistenten mit Fake-API).
+func newEnvWith(t *testing.T, extra func(*Deps, *pgxpool.Pool)) *env {
 	url := os.Getenv("VECTRA_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("VECTRA_TEST_DATABASE_URL nicht gesetzt")
@@ -58,7 +61,7 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE documents.vehicle_image, documents.attachment, documents.document_file, documents.document, documents.file, costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE documents.vehicle_image, documents.attachment, documents.document_file, documents.document, documents.file, costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.api_token, identity.account, assistant.consent, assistant.message, assistant.proposal, assistant.conversation, assistant.request_log`); err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -73,9 +76,13 @@ func newEnv(t *testing.T) *env {
 	now := func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
 	cs, ms, ss, ts := costs.NewService(pool, odo), maintenance.NewService(pool, odo), servicehistory.NewService(pool, odo), trips.NewService(pool, odo)
 	cs.Now, ms.Now, ss.Now, ts.Now = now, now, now, now
-	srv := httptest.NewServer(Handler(Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: cs, Maintenance: ms, Service: ss, Trips: ts,
+	deps := Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: cs, Maintenance: ms, Service: ss, Trips: ts,
 		Documents: documents.NewService(pool, storage.Local{Dir: t.TempDir()}, 2<<20),
-		Log:       log, CookieSecure: false}))
+		Log:       log, CookieSecure: false}
+	if extra != nil {
+		extra(&deps, pool)
+	}
+	srv := httptest.NewServer(Handler(deps))
 	t.Cleanup(func() { srv.Close(); pool.Close() })
 	return &env{t: t, srv: srv, pool: pool}
 }

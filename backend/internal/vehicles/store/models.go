@@ -8,6 +8,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AssistantConsent struct {
+	AccountID pgtype.UUID
+	Provider  string
+	GivenAt   pgtype.Timestamptz
+}
+
+type AssistantConversation struct {
+	ID        pgtype.UUID
+	AccountID pgtype.UUID
+	VehicleID pgtype.UUID
+	Title     pgtype.Text
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type AssistantMessage struct {
+	ID             pgtype.UUID
+	ConversationID pgtype.UUID
+	Role           string
+	Text           string
+	ProposalIds    []pgtype.UUID
+	CreatedAt      pgtype.Timestamptz
+}
+
+type AssistantProposal struct {
+	ID             pgtype.UUID
+	AccountID      pgtype.UUID
+	ConversationID pgtype.UUID
+	VehicleID      pgtype.UUID
+	Operation      string
+	Summary        string
+	Body           []byte
+	Anomalies      []byte
+	Status         string
+	ExpiresAt      pgtype.Timestamptz
+	ResultID       pgtype.UUID
+	CreatedAt      pgtype.Timestamptz
+	DecidedAt      pgtype.Timestamptz
+}
+
+type AssistantRequestLog struct {
+	ID           pgtype.UUID
+	AccountID    pgtype.UUID
+	Provider     string
+	Model        string
+	InputTokens  int32
+	OutputTokens int32
+	Tools        []string
+	CreatedAt    pgtype.Timestamptz
+}
+
 type AuditEvent struct {
 	ID             pgtype.UUID
 	OccurredAt     pgtype.Timestamptz
@@ -176,6 +227,19 @@ type IdentityAccount struct {
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
 	Version       int32
+}
+
+type IdentityApiToken struct {
+	ID         pgtype.UUID
+	AccountID  pgtype.UUID
+	Name       string
+	TokenHash  []byte
+	Scopes     []string
+	VehicleIds []pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
 }
 
 type IdentitySession struct {

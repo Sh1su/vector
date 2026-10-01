@@ -2739,8 +2739,17 @@ type AssistantStatus struct {
 		External bool   `json:"external"`
 		Name     string `json:"name"`
 	}] `json:"embedding_provider,omitempty"`
-	Enabled     bool `json:"enabled"`
-	UserEnabled bool `json:"user_enabled"`
+	Enabled bool `json:"enabled"`
+
+	// McpUrl Adresse des MCP-Servers für externe KI-Clients (Anmeldung mit API-Token)
+	McpUrl *string `json:"mcp_url,omitempty"`
+
+	// Model konfiguriertes Sprachmodell, z. B. claude-sonnet-4-5
+	Model       nullable.Nullable[string] `json:"model,omitempty"`
+	UserEnabled bool                      `json:"user_enabled"`
+
+	// WebSearch Websuche für öffentliche Herstellerangaben (ADR-032)
+	WebSearch *bool `json:"web_search,omitempty"`
 }
 
 // Attachment genau eines von file_id oder document_id; gleiches Fahrzeug (I-DO-1)
@@ -4369,7 +4378,10 @@ type Proposal struct {
 	Operation string                                `json:"operation"`
 	ResultId  nullable.Nullable[openapi_types.UUID] `json:"result_id,omitempty"`
 	Status    ProposalStatus                        `json:"status"`
-	VehicleId openapi_types.UUID                    `json:"vehicle_id"`
+
+	// Summary Kurzbeschreibung für die Bestätigung, z. B. „Fahrt starten bei 143.520 km · Geschäftlich“
+	Summary   *string            `json:"summary,omitempty"`
+	VehicleId openapi_types.UUID `json:"vehicle_id"`
 }
 
 // ProposalStatus defines model for Proposal.Status.

@@ -65,3 +65,20 @@ UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $
 -- name: VehicleOwnerSettings :one
 SELECT a.settings FROM identity.vehicle_membership m JOIN identity.account a ON a.id = m.account_id
 WHERE m.vehicle_id = $1 AND m.role = 'owner' LIMIT 1;
+
+-- name: InsertApiToken :one
+INSERT INTO identity.api_token (id, account_id, name, token_hash, scopes, vehicle_ids, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+
+-- name: ListApiTokens :many
+SELECT * FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC;
+
+-- name: RevokeApiToken :execrows
+UPDATE identity.api_token SET revoked_at = now() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL;
+
+-- name: GetActiveApiToken :one
+SELECT t.*, a.is_admin FROM identity.api_token t JOIN identity.account a ON a.id = t.account_id
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND a.status = 'active';
+
+-- name: TouchApiToken :exec
+UPDATE identity.api_token SET last_used_at = now() WHERE id = $1;

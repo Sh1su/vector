@@ -3,11 +3,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sh1su/vector/backend/internal/api"
+	"github.com/sh1su/vector/backend/internal/assistant"
 	"github.com/sh1su/vector/backend/internal/costs"
 	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/identity"
@@ -39,6 +43,7 @@ type Deps struct {
 	Service      *servicehistory.Service
 	Trips        *trips.Service
 	Documents    *documents.Service
+	Assistant    *assistant.Service
 	Log          *slog.Logger
 	CookieSecure bool
 	WebDir       string
@@ -65,6 +70,14 @@ func Handler(d Deps) http.Handler {
 			return d.Identity.OwnerSettings(ctx, db, vehicleID)
 		}
 	}
+	paramError := func(w http.ResponseWriter, r *http.Request, err error) {
+		var rh *api.RequiredHeaderError
+		if errors.As(err, &rh) && rh.ParamName == "If-Match" {
+			problem.Write(w, problem.PreconditionRequired(), requestID(r))
+			return
+		}
+		problem.Write(w, problem.Validation(problem.FieldError{Pointer: "", Code: "parameter", Message: err.Error()}), requestID(r))
+	}
 	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			problem.Write(w, problem.BadRequest("Der Request-Body ist ungültig."), requestID(r))
@@ -84,17 +97,17 @@ func Handler(d Deps) http.Handler {
 	r.Use(withRequestID, func(h http.Handler) http.Handler { return withLogging(d.Log, h) }, withSecurityHeaders)
 	apiRouter := chi.NewRouter()
 	apiRouter.Use(withBodyLimit, withClientInfo, func(h http.Handler) http.Handler { return withAuth(d.Identity, h) })
-	api.HandlerWithOptions(strict, api.ChiServerOptions{
-		BaseRouter: apiRouter,
-		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			var rh *api.RequiredHeaderError
-			if errors.As(err, &rh) && rh.ParamName == "If-Match" {
-				problem.Write(w, problem.PreconditionRequired(), requestID(r))
-				return
-			}
-			problem.Write(w, problem.Validation(problem.FieldError{Pointer: "", Code: "parameter", Message: err.Error()}), requestID(r))
-		},
-	})
+	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: apiRouter, ErrorHandlerFunc: paramError})
+
+	// Interner Aufrufweg für Assistent und MCP: dieselbe API, Akteur aus dem Kontext statt Cookie.
+	inner := chi.NewRouter()
+	inner.Use(withBodyLimit)
+	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: inner, ErrorHandlerFunc: paramError})
+	caller := internalCaller(inner)
+	if d.Assistant != nil {
+		d.Assistant.Caller = caller
+	}
+	apiRouter.Handle(mcpPath, assistant.MCP(caller, "1.0"))
 	apiRouter.NotFound(func(w http.ResponseWriter, r *http.Request) { problem.Write(w, problem.NotFound(), requestID(r)) })
 	r.Mount(apiPrefix, apiRouter)
 	r.Get(apiPrefix+"/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
@@ -138,4 +151,34 @@ func convert(src, dst any) error {
 		return err
 	}
 	return json.Unmarshal(b, dst)
+}
+
+// internalCaller ruft die API ohne Netz auf; Rechte, Validierung und Audit gelten unverändert.
+func internalCaller(h http.Handler) assistant.Caller {
+	return func(ctx context.Context, method, path string, body any, headers map[string]string) (int, []byte) {
+		var rd io.Reader
+		if body != nil {
+			b, err := json.Marshal(body)
+			if err != nil {
+				return 400, nil
+			}
+			rd = bytes.NewReader(b)
+		}
+		// Den Routing-Kontext der äußeren Anfrage entfernen, sonst routet chi nach deren Pfad.
+		ctx = context.WithValue(ctx, chi.RouteCtxKey, nil)
+		req, err := http.NewRequestWithContext(ctx, method, path, rd)
+		if err != nil {
+			return 400, nil
+		}
+		req.Header.Set("Accept", "application/json")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.Bytes()
+	}
 }

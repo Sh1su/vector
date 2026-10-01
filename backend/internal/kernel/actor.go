@@ -13,6 +13,45 @@ type Actor struct {
 	SessionID uuid.UUID
 	Kind      string // user | api_token | assistant | import | system
 	RequestID string
+	// Nur bei API-Tokens: erlaubte Scopes und (optional) Fahrzeuge. nil = keine Einschränkung.
+	Scopes     []string
+	VehicleIDs []uuid.UUID
+}
+
+// Scopes für API-Tokens (Schema Scope).
+const (
+	ScopeVehiclesRead  = "vehicles:read"
+	ScopeEntriesWrite  = "entries:write"
+	ScopeEntriesDelete = "entries:delete"
+)
+
+// Restricted: Akteur unterliegt Token-Scopes.
+func (a Actor) Restricted() bool { return a.Kind == "api_token" }
+
+// HasScope prüft einen Scope; Sitzungen haben alle Scopes ihrer Rolle.
+func (a Actor) HasScope(s string) bool {
+	if !a.Restricted() {
+		return true
+	}
+	for _, x := range a.Scopes {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// MayAccess prüft die Fahrzeugbeschränkung eines Tokens.
+func (a Actor) MayAccess(vehicleID uuid.UUID) bool {
+	if a.VehicleIDs == nil {
+		return true
+	}
+	for _, id := range a.VehicleIDs {
+		if id == vehicleID {
+			return true
+		}
+	}
+	return false
 }
 
 type actorKey struct{}

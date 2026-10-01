@@ -37,6 +37,12 @@ func RoleOf(ctx context.Context, db store.DBTX, vehicleID, accountID uuid.UUID) 
 // vehicleID muss aus dem geladenen Objekt stammen, nie aus dem Request.
 // Ohne Mitgliedschaft: 404 (kein Informationsleck, ADR-013); zu geringe Rolle: 403.
 func Authorize(ctx context.Context, db store.DBTX, actor kernel.Actor, vehicleID uuid.UUID, need string) (string, error) {
+	if !actor.MayAccess(vehicleID) {
+		return "", problem.NotFound()
+	}
+	if need != RoleViewer && !actor.HasScope(kernel.ScopeEntriesWrite) {
+		return "", problem.Forbidden("Das Token darf nur lesen (Scope entries:write fehlt).")
+	}
 	role, err := RoleOf(ctx, db, vehicleID, actor.AccountID)
 	if err != nil {
 		return "", err

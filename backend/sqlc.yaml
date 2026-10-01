@@ -40,3 +40,8 @@ sql:
     queries: queries/documents.sql
     gen:
       go: {package: store, out: internal/documents/store, sql_package: pgx/v5}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/assistant.sql
+    gen:
+      go: {package: store, out: internal/assistant/store, sql_package: pgx/v5}

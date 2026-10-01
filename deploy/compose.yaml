@@ -30,6 +30,11 @@ services:
       VECTRA_SETUP_TOKEN: ${VECTRA_SETUP_TOKEN:-}
       VECTRA_COOKIE_SECURE: "true"
       VECTRA_MAX_UPLOAD_MB: ${VECTRA_MAX_UPLOAD_MB:-25}
+      # KI-Assistent (ADR-024, ADR-032): leer = aus
+      VECTRA_ASSISTANT_PROVIDER: ${VECTRA_ASSISTANT_PROVIDER:-}
+      VECTRA_ASSISTANT_MODEL: ${VECTRA_ASSISTANT_MODEL:-}
+      VECTRA_ASSISTANT_WEB_SEARCH: ${VECTRA_ASSISTANT_WEB_SEARCH:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - files:/data   # Dokumente und Bilder (ADR-017), ins Backup aufnehmen
     read_only: true

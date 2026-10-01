@@ -17,6 +17,7 @@ const (
 	sessionCookie = "vectra_session"
 	csrfCookie    = "vectra_csrf"
 	csrfHeader    = "X-CSRF-Token"
+	mcpPath       = "/mcp"
 	apiPrefix     = "/api/v1"
 	// maxUploadBody ist die harte Obergrenze eines Multipart-Bodys (Datei + Felder).
 	maxUploadBody = 256 << 20
@@ -62,6 +63,9 @@ type statusWriter struct {
 
 func (s *statusWriter) WriteHeader(c int) { s.status = c; s.ResponseWriter.WriteHeader(c) }
 
+// Unwrap erlaubt http.ResponseController (Flush für Server-Sent Events).
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // withLogging protokolliert jede Anfrage ohne Inhalte (ADR-030).
 func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +91,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(self), camera=(self)")
 		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
@@ -112,6 +116,23 @@ func withAuth(ids *identity.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, apiPrefix)
 		ctx := r.Context()
+		// API-Tokens (Bearer) gelten vorerst nur für den MCP-Server; die übrige API bleibt
+		// Sitzungen vorbehalten, bis die Scope-Prüfung je Operation umgesetzt ist.
+		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") && path == mcpPath {
+			a, ok, err := ids.ResolveToken(ctx, strings.TrimPrefix(h, "Bearer "))
+			if err != nil {
+				problem.Write(w, err, requestID(r))
+				return
+			}
+			if !ok {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="vectra"`)
+				problem.Write(w, problem.Unauthorized(), requestID(r))
+				return
+			}
+			a.RequestID = requestID(r)
+			next.ServeHTTP(w, r.WithContext(kernel.WithActor(ctx, a)))
+			return
+		}
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			info, ok, err := ids.ResolveSession(ctx, c.Value)
 			if err != nil {
