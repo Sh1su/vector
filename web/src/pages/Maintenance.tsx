@@ -8,7 +8,7 @@ import { Button, Card, Chip, EmptyState, Field, inputClass } from '../components
 import { fmtNumber } from '../lib/format'
 import { errorText, etagOf, fmtDay, parseNumber, today } from '../lib/money'
 import { useCurrent } from '../lib/odometer'
-import { useApp } from '../lib/state'
+import { useApp, type Vehicle } from '../lib/state'
 
 export type MaintItem = Schemas['MaintenanceItem'] & { version: number; status: Schemas['DueStatus'] }
 type Due = Schemas['DueStatus']
@@ -68,6 +68,7 @@ export function MaintenancePage() {
   const items = useMaintenance(vid)
   const [editing, setEditing] = useState<MaintItem | 'new' | null>(null)
   const [completing, setCompleting] = useState<MaintItem | null>(null)
+  const [book, setBook] = useState(false)
   const canEdit = vehicle?.my_role === 'owner' || vehicle?.my_role === 'editor'
 
   if (!vehicle) return <><Header title="Wartung" /><main className="p-8"><EmptyState icon="car" title="Noch kein Fahrzeug" text="Lege zuerst ein Fahrzeug an." /></main></>
@@ -80,7 +81,7 @@ export function MaintenancePage() {
   return (
     <>
       <Header title="Wartung" sub={`${vehicle.display_name} · was wann fällig wird`}
-        actions={canEdit && <Button icon="plus" onClick={() => setEditing('new')}>Wartung planen</Button>} />
+        actions={canEdit && <div className="flex gap-2"><Button variant="outline" icon="doc" onClick={() => setBook(true)}>Wartungsbuch</Button><Button icon="plus" onClick={() => setEditing('new')}>Wartung planen</Button></div>} />
       <main className="flex min-h-0 flex-grow flex-col gap-5 overflow-y-auto px-8 py-6">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           {(['overdue', 'due', 'upcoming', 'ok'] as const).map((l) => (
@@ -92,7 +93,7 @@ export function MaintenancePage() {
         </div>
         {list.length === 0 && !items.isPending && (
           <EmptyState icon="wrench" title="Noch keine Wartungen geplant" text="Lege fest, was regelmäßig fällig ist – z. B. Ölwechsel alle 12 Monate oder 15.000 km, HU alle 24 Monate."
-            action={canEdit && <Button icon="plus" onClick={() => setEditing('new')}>Wartung planen</Button>} />
+            action={canEdit && <div className="flex flex-wrap justify-center gap-2"><Button icon="doc" onClick={() => setBook(true)}>Wartungsbuch übernehmen</Button><Button variant="outline" icon="plus" onClick={() => setEditing('new')}>Selbst planen</Button></div>} />
         )}
         {list.length > 0 && (
           <Card className="overflow-hidden">
@@ -125,6 +126,7 @@ export function MaintenancePage() {
       </main>
       {editing && <ItemDialog vid={vehicle.id} item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {completing && <CompleteDialog vid={vehicle.id} item={completing} onClose={() => setCompleting(null)} />}
+      {book && <BookDialog vehicle={vehicle} onClose={() => setBook(false)} />}
     </>
   )
 }
@@ -255,6 +257,99 @@ function CompleteDialog({ vid, item, onClose }: { vid: string; item: MaintItem; 
         {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
         <Button type="submit" className="self-end" disabled={save.isPending}>Speichern</Button>
       </form>
+    </Dialog>
+  )
+}
+
+type Book = Schemas['MaintenanceBook']
+
+function bookInterval(i: Schemas['MaintenanceBookItem']) {
+  const p: string[] = []
+  if (i.interval_months) p.push(i.interval_months % 12 === 0 ? `${i.interval_months / 12} ${i.interval_months === 12 ? 'Jahr' : 'Jahre'}` : `${i.interval_months} Monate`)
+  if (i.interval_distance) p.push(`${fmtNumber(i.interval_distance.value)} ${i.interval_distance.unit}`)
+  return 'alle ' + p.join(' oder ')
+}
+
+/** Wartungsbuch übernehmen: Vorlage wählen, Positionen abhaken, Basis (Neufahrzeug oder letzte Inspektion). */
+function BookDialog({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => void }) {
+  const qc = useQueryClient()
+  const books = useQuery({ queryKey: ['maintenance-books'], queryFn: () => api.get<{ items: Book[] }>('/maintenance-books'), staleTime: Infinity })
+  const cur = useCurrent(vehicle.id).data
+  const all = books.data?.items ?? []
+  const match = (b: Book) => (vehicle.make ?? '').toLowerCase().includes(b.make.toLowerCase()) && (vehicle.model ?? '').toLowerCase().includes(b.model.toLowerCase())
+  const [bookId, setBookId] = useState<string>()
+  const chosen = all.find((b) => b.id === bookId) ?? all.find(match) ?? all[0]
+  const [off, setOff] = useState<Set<string>>(new Set())
+  const [base, setBase] = useState<'new' | 'last'>(vehicle.first_registration ? 'new' : 'last')
+  const [date, setDate] = useState(vehicle.first_registration ?? today())
+  const [km, setKm] = useState(vehicle.first_registration ? '0' : cur?.meter_value ? String(Math.round(cur.meter_value.canonical / 1000)) : '')
+  const [result, setResult] = useState<Schemas['MaintenanceBookApplyResult']>()
+  const [error, setError] = useState<string>()
+  const apply = useMutation({
+    mutationFn: () => {
+      const n = parseNumber(km)
+      return api.post<Schemas['MaintenanceBookApplyResult']>(`/vehicles/${vehicle.id}/maintenance-books/${chosen!.id}/apply`, {
+        item_keys: chosen!.items.filter((i) => !off.has(i.key)).map((i) => i.key),
+        anchor_date: date || null, anchor_odometer: n === null ? null : { value: n, unit: 'km' }, since_new: base === 'new',
+      })
+    },
+    onSuccess: (r) => { setResult(r); qc.invalidateQueries({ queryKey: ['maintenance', vehicle.id] }) },
+    onError: (e) => setError(errorText(e)),
+  })
+  const pickBase = (b: 'new' | 'last') => {
+    setBase(b)
+    if (b === 'new') { setDate(vehicle.first_registration ?? ''); setKm('0') } else { setDate(today()); setKm(cur?.meter_value ? String(Math.round(cur.meter_value.canonical / 1000)) : '') }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title="Wartungsbuch übernehmen">
+      {result ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-2.5 rounded-[12px] bg-ok-bg px-3.5 py-3 text-[13px] text-ok"><Icon name="check" size={18} />
+            <div>{result.created.length} {result.created.length === 1 ? 'Wartung angelegt' : 'Wartungen angelegt'}{result.skipped.length > 0 && `, ${result.skipped.length} bereits vorhanden (${result.skipped.join(', ')})`}. Intervalle lassen sich jederzeit anpassen.</div>
+          </div>
+          <Button className="self-end" onClick={onClose}>Fertig</Button>
+        </div>
+      ) : (
+        <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); setError(undefined); apply.mutate() }}>
+          <Field label="Fahrzeugmodell" htmlFor="b-book">
+            <select id="b-book" className={inputClass} value={chosen?.id ?? ''} onChange={(e) => { setBookId(e.target.value); setOff(new Set()) }}>
+              {all.map((b) => <option key={b.id} value={b.id}>{b.make} {b.model}{b.variant ? ` – ${b.variant}` : ''}</option>)}
+            </select>
+          </Field>
+          {chosen && (
+            <>
+              <div className="flex items-start gap-2.5 rounded-[12px] bg-warn-bg px-3.5 py-3 text-[13px] leading-normal text-warn"><Icon name="info" size={18} /><div>{chosen.source}</div></div>
+              <div className="flex max-h-[260px] flex-col overflow-y-auto rounded-[12px] border border-line">
+                {chosen.items.map((i, idx) => (
+                  <label key={i.key} className={`flex cursor-pointer items-start gap-3 px-4 py-2.5 ${idx ? 'border-t border-line' : ''}`}>
+                    <input type="checkbox" className="mt-1 h-4 w-4 accent-teal" checked={!off.has(i.key)}
+                      onChange={(e) => { const s = new Set(off); if (e.target.checked) s.delete(i.key); else s.add(i.key); setOff(s) }} />
+                    <span className="flex flex-col">
+                      <span className="text-sm font-semibold">{i.title}</span>
+                      <span className="text-xs text-muted">{bookInterval(i)}{i.first_interval_months ? ` · erstmals nach ${i.first_interval_months} Monaten${i.first_interval_distance ? ` bzw. ${fmtNumber(i.first_interval_distance.value)} km` : ''}` : ''}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold">Ab wann rechnen?</span>
+                <div className="flex flex-wrap gap-2">
+                  {([['new', 'Neufahrzeug ab Erstzulassung'], ['last', 'Letzte Inspektion']] as const).map(([k, l]) => (
+                    <button key={k} type="button" aria-pressed={base === k} onClick={() => pickBase(k)}
+                      className={`h-10 rounded-[10px] border px-4 text-sm font-semibold ${base === k ? 'border-teal bg-info-bg text-link' : 'border-line'}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label={base === 'new' ? 'Erstzulassung' : 'Letzte Inspektion am'} htmlFor="b-date"><input id="b-date" type="date" required max={today()} className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+                <Field label="Kilometerstand damals" htmlFor="b-km" hint="optional"><input id="b-km" inputMode="decimal" className={inputClass} value={km} onChange={(e) => setKm(e.target.value)} /></Field>
+              </div>
+            </>
+          )}
+          {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
+          <Button type="submit" className="self-end" disabled={!chosen || apply.isPending || off.size === chosen.items.length}>Übernehmen</Button>
+        </form>
+      )}
     </Dialog>
   )
 }

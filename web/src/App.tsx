@@ -13,6 +13,7 @@ import { MaintenancePage } from './pages/Maintenance'
 import { ServicePage } from './pages/Service'
 import { CostsPage } from './pages/Costs'
 import { DocumentsPage } from './pages/Documents'
+import { SettingsPage } from './pages/Settings'
 
 function Shell() {
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me'), retry: false })
@@ -38,7 +39,7 @@ function Shell() {
             <Route path="oel" element={<ComingSoon title="Öl" icon="oil" iteration={2} />} />
             <Route path="dokumente" element={<DocumentsPage />} />
             <Route path="assistent" element={<ComingSoon title="Assistent" icon="sparkles" iteration={7} />} />
-            <Route path="einstellungen" element={<ComingSoon title="Einstellungen" icon="gear" iteration={3} />} />
+            <Route path="einstellungen" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
