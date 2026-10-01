@@ -3889,6 +3889,12 @@ export interface components {
             consent_required: boolean;
             /** Format: date-time */
             consent_given_at?: string | null;
+            /** @description konfiguriertes Sprachmodell, z. B. claude-sonnet-4-5 */
+            model?: string | null;
+            /** @description Websuche für öffentliche Herstellerangaben (ADR-032) */
+            web_search?: boolean;
+            /** @description Adresse des MCP-Servers für externe KI-Clients (Anmeldung mit API-Token) */
+            mcp_url?: string;
         };
         AssistantConsent: {
             accept_external_provider: boolean;
@@ -3917,6 +3923,8 @@ export interface components {
             id: string;
             /** @example createOilEntry */
             operation: string;
+            /** @description Kurzbeschreibung für die Bestätigung, z. B. „Fahrt starten bei 143.520 km · Geschäftlich“ */
+            summary?: string;
             /** Format: uuid */
             vehicle_id: string;
             body: {
