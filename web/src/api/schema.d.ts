@@ -1011,6 +1011,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maintenance-books": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten */
+        get: operations["listMaintenanceBooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicles/{vehicle_id}/maintenance-books/{book_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent) */
+        post: operations["applyMaintenanceBook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/due": {
         parameters: {
             query?: never;
@@ -2080,6 +2114,11 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            /**
+             * @description android verlängert die Sitzung (Leerlauf 90 Tage, höchstens 365 Tage), damit die App angemeldet bleibt
+             * @enum {string}
+             */
+            client_kind?: "web" | "android";
         };
         SetupRequest: {
             setup_token: string;
@@ -2957,6 +2996,48 @@ export interface components {
             active?: boolean;
             note?: string;
             readonly status?: components["schemas"]["DueStatus"];
+        };
+        MaintenanceBookItem: {
+            key: string;
+            title: string;
+            description?: string | null;
+            /** @enum {string} */
+            category: "service" | "legal_inspection" | "tires" | "fluids" | "brakes" | "filters" | "other";
+            interval_months?: number | null;
+            interval_distance?: components["schemas"]["QuantityInput"] | null;
+            /** @description Abweichendes erstes Intervall ab Erstzulassung (z. B. HU nach 36 Monaten) */
+            first_interval_months?: number | null;
+            first_interval_distance?: components["schemas"]["QuantityInput"] | null;
+        };
+        MaintenanceBook: {
+            id: string;
+            make: string;
+            model: string;
+            variant?: string | null;
+            title: string;
+            /** @description Herkunft der Intervalle und Hinweis zur Prüfung gegen das Serviceheft */
+            source: string;
+            items: components["schemas"]["MaintenanceBookItem"][];
+        };
+        MaintenanceBookPage: {
+            items: components["schemas"]["MaintenanceBook"][];
+        };
+        MaintenanceBookApply: {
+            /** @description Nur diese Positionen übernehmen; fehlt das Feld, alle */
+            item_keys?: string[];
+            /**
+             * Format: date
+             * @description Datum der letzten Durchführung bzw. Erstzulassung (Basis der ersten Fälligkeit)
+             */
+            anchor_date?: string | null;
+            anchor_odometer?: components["schemas"]["QuantityInput"] | null;
+            /** @description Basis ist die Erstzulassung; erste Intervalle (first_interval_*) gelten */
+            since_new?: boolean;
+        };
+        MaintenanceBookApplyResult: {
+            created: components["schemas"]["MaintenanceItem"][];
+            /** @description Titel, die am Fahrzeug bereits als Wartungsdefinition existieren */
+            skipped: string[];
         };
         MaintenanceItemCreate: {
             /**
@@ -6604,6 +6685,65 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listMaintenanceBooks: {
+        parameters: {
+            query?: {
+                /** @description Nur Bücher dieser Marke (Groß-/Kleinschreibung egal) */
+                make?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceBookPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    applyMaintenanceBook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: components["parameters"]["VehicleId"];
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceBookApply"];
+            };
+        };
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceBookApplyResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
         };
     };

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/sh1su/vector/backend/internal/api"
 	"github.com/sh1su/vector/backend/internal/identity"
 	"github.com/sh1su/vector/backend/internal/kernel"
@@ -61,7 +63,11 @@ func (l loginResponse) VisitLoginResponse(w http.ResponseWriter) error {
 
 func (s *Server) Login(ctx context.Context, req api.LoginRequestObject) (api.LoginResponseObject, error) {
 	ip, ua := clientInfo(ctx)
-	sess, err := s.d.Identity.Login(ctx, string(req.Body.Email), str(req.Body.Password), ip, ua)
+	kind := "web"
+	if req.Body.ClientKind != nil {
+		kind = string(*req.Body.ClientKind)
+	}
+	sess, err := s.d.Identity.Login(ctx, string(req.Body.Email), str(req.Body.Password), kind, ip, ua)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +158,46 @@ func (s *Server) UpdateSettings(ctx context.Context, req api.UpdateSettingsReque
 		return nil, err
 	}
 	return api.UpdateSettings200JSONResponse{Body: out}, nil
+}
+
+func (s *Server) ChangePassword(ctx context.Context, req api.ChangePasswordRequestObject) (api.ChangePasswordResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.d.Identity.ChangePassword(ctx, a.AccountID, a.SessionID, str(req.Body.CurrentPassword), str(req.Body.NewPassword)); err != nil {
+		return nil, err
+	}
+	return api.ChangePassword204Response{}, nil
+}
+
+func (s *Server) ListSessions(ctx context.Context, _ api.ListSessionsRequestObject) (api.ListSessionsResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.d.Identity.Sessions(ctx, a.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	out := api.SessionPage{Items: []api.Session{}}
+	for _, v := range list {
+		cur := v.ID == a.SessionID
+		ua, seen := v.UserAgent, v.LastSeenAt
+		out.Items = append(out.Items, api.Session{Id: v.ID, ClientKind: api.SessionClientKind(v.ClientKind), CreatedAt: v.CreatedAt, LastSeenAt: &seen, UserAgent: &ua, Current: &cur})
+	}
+	return api.ListSessions200JSONResponse(out), nil
+}
+
+func (s *Server) RevokeSession(ctx context.Context, req api.RevokeSessionRequestObject) (api.RevokeSessionResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.d.Identity.RevokeSession(ctx, a.AccountID, uuid.UUID(req.SessionId)); err != nil {
+		return nil, err
+	}
+	return api.RevokeSession204Response{}, nil
 }
 
 // clientInfo liest IP und User-Agent, die withClientInfo im Kontext ablegt.

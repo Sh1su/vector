@@ -281,3 +281,42 @@ func (s *Server) GetServiceSummary(ctx context.Context, req api.GetServiceSummar
 	}
 	return api.GetServiceSummary200JSONResponse{Body: body}, nil
 }
+
+func (s *Server) ListMaintenanceBooks(ctx context.Context, req api.ListMaintenanceBooksRequestObject) (api.ListMaintenanceBooksResponseObject, error) {
+	if _, err := mustActor(ctx); err != nil {
+		return nil, err
+	}
+	mk := ""
+	if req.Params.Make != nil {
+		mk = *req.Params.Make
+	}
+	var out api.MaintenanceBookPage
+	if err := convert(map[string]any{"items": maintenance.Books(mk)}, &out); err != nil {
+		return nil, err
+	}
+	return api.ListMaintenanceBooks200JSONResponse(out), nil
+}
+
+func (s *Server) ApplyMaintenanceBook(ctx context.Context, req api.ApplyMaintenanceBookRequestObject) (api.ApplyMaintenanceBookResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var in maintenance.ApplyInput
+	if err := bodyTo(req.Body, &in); err != nil {
+		return nil, err
+	}
+	res, err := s.d.Maintenance.ApplyBook(ctx, a, uuid.UUID(req.VehicleId), req.BookId, in)
+	if err != nil {
+		return nil, err
+	}
+	out := api.MaintenanceBookApplyResult{Created: []api.MaintenanceItem{}, Skipped: res.Skipped}
+	for _, v := range res.Created {
+		b, err := maintenanceBody(v)
+		if err != nil {
+			return nil, err
+		}
+		out.Created = append(out.Created, b)
+	}
+	return api.ApplyMaintenanceBook200JSONResponse(out), nil
+}

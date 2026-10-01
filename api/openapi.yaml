@@ -3164,6 +3164,80 @@ paths:
       - bearerToken: []
       x-vectra-role: viewer
       x-vectra-scope: vehicles:read
+  /maintenance-books:
+    get:
+      operationId: listMaintenanceBooks
+      summary: Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten
+      tags:
+      - Maintenance
+      parameters:
+      - name: make
+        in: query
+        description: Nur Bücher dieser Marke (Groß-/Kleinschreibung egal)
+        schema:
+          type: string
+          maxLength: 80
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceBookPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+  /vehicles/{vehicle_id}/maintenance-books/{book_id}/apply:
+    post:
+      operationId: applyMaintenanceBook
+      summary: Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent)
+      tags:
+      - Maintenance
+      parameters:
+      - $ref: '#/components/parameters/VehicleId'
+      - name: book_id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 80
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceBookApply'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceBookApplyResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: editor
+      x-vectra-scope: entries:write
   /me/due:
     get:
       operationId: getDueFeed
@@ -6757,6 +6831,12 @@ components:
         password:
           type: string
           writeOnly: true
+        client_kind:
+          description: android verlängert die Sitzung (Leerlauf 90 Tage, höchstens 365 Tage), damit die App angemeldet bleibt
+          type: string
+          enum:
+          - web
+          - android
       required:
       - email
       - password
@@ -9295,6 +9375,122 @@ components:
         - title
         - category
         - schedule_mode
+    MaintenanceBookItem:
+      type: object
+      properties:
+        key:
+          type: string
+        title:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        category:
+          type: string
+          enum:
+          - service
+          - legal_inspection
+          - tires
+          - fluids
+          - brakes
+          - filters
+          - other
+        interval_months:
+          type:
+          - integer
+          - 'null'
+        interval_distance:
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        first_interval_months:
+          description: Abweichendes erstes Intervall ab Erstzulassung (z. B. HU nach 36 Monaten)
+          type:
+          - integer
+          - 'null'
+        first_interval_distance:
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+      required:
+      - key
+      - title
+      - category
+    MaintenanceBook:
+      type: object
+      properties:
+        id:
+          type: string
+        make:
+          type: string
+        model:
+          type: string
+        variant:
+          type:
+          - string
+          - 'null'
+        title:
+          type: string
+        source:
+          type: string
+          description: Herkunft der Intervalle und Hinweis zur Prüfung gegen das Serviceheft
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceBookItem'
+      required:
+      - id
+      - make
+      - model
+      - title
+      - source
+      - items
+    MaintenanceBookPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceBook'
+      required:
+      - items
+    MaintenanceBookApply:
+      type: object
+      properties:
+        item_keys:
+          description: Nur diese Positionen übernehmen; fehlt das Feld, alle
+          type: array
+          items:
+            type: string
+        anchor_date:
+          description: Datum der letzten Durchführung bzw. Erstzulassung (Basis der ersten Fälligkeit)
+          type:
+          - string
+          - 'null'
+          format: date
+        anchor_odometer:
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        since_new:
+          description: Basis ist die Erstzulassung; erste Intervalle (first_interval_*) gelten
+          type: boolean
+    MaintenanceBookApplyResult:
+      type: object
+      properties:
+        created:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceItem'
+        skipped:
+          description: Titel, die am Fahrzeug bereits als Wartungsdefinition existieren
+          type: array
+          items:
+            type: string
+      required:
+      - created
+      - skipped
     MaintenanceItemCreate:
       type: object
       properties:

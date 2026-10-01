@@ -41,6 +41,10 @@ func (NotImplemented) AdminUpdateSettings(context.Context, AdminUpdateSettingsRe
 	return nil, ErrNotImplemented
 }
 
+func (NotImplemented) ApplyMaintenanceBook(context.Context, ApplyMaintenanceBookRequestObject) (ApplyMaintenanceBookResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 func (NotImplemented) CancelTrip(context.Context, CancelTripRequestObject) (CancelTripResponseObject, error) {
 	return nil, ErrNotImplemented
 }
@@ -450,6 +454,10 @@ func (NotImplemented) ListImports(context.Context, ListImportsRequestObject) (Li
 }
 
 func (NotImplemented) ListInvitations(context.Context, ListInvitationsRequestObject) (ListInvitationsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+func (NotImplemented) ListMaintenanceBooks(context.Context, ListMaintenanceBooksRequestObject) (ListMaintenanceBooksResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

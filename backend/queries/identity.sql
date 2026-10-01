@@ -26,7 +26,7 @@ INSERT INTO identity.session (id, account_id, token_hash, csrf_token, client_kin
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: GetActiveSession :one
-SELECT s.id, s.account_id, s.csrf_token, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
+SELECT s.id, s.account_id, s.csrf_token, s.client_kind, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
 FROM identity.session s
 JOIN identity.account a ON a.id = s.account_id
 WHERE s.token_hash = $1 AND s.revoked_at IS NULL
@@ -55,3 +55,9 @@ INSERT INTO identity.vehicle_membership (vehicle_id, account_id, role) VALUES ($
 
 -- name: ListMemberVehicleIDs :many
 SELECT vehicle_id, role FROM identity.vehicle_membership WHERE account_id = $1;
+
+-- name: UpdatePasswordHash :exec
+UPDATE identity.account SET password_hash = $2, updated_at = now(), version = version + 1 WHERE id = $1;
+
+-- name: RevokeOtherSessions :exec
+UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL;
