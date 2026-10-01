@@ -3,6 +3,7 @@ package app.vectra.core.outbox
 import app.vectra.core.model.Problem
 import app.vectra.core.model.VectraJson
 import app.vectra.core.net.RawResponse
+import app.vectra.core.util.UuidV7
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
@@ -152,6 +153,27 @@ class Outbox(private val store: OutboxStore, private val transport: Transport) {
         obj["confirm_anomalies"] = JsonArray(codes.map { JsonPrimitive(it) })
         obj["anomaly_reason"] = JsonPrimitive(reason.trim())
         store.upsert(e.copy(body = JsonObject(obj).toString(), status = OutboxStatus.PENDING, problem = null))
+    }
+
+    /**
+     * Wert korrigieren (Konfliktdialog: „Der Wert war falsch“). Der Eintrag bekommt eine neue ID – der
+     * Server kennt die alte eventuell schon mit anderem Inhalt –, behält aber seinen Platz in der
+     * Reihenfolge; Bestätigungen fallen weg, weil der neue Wert neu geprüft wird.
+     */
+    suspend fun amendValue(id: String, value: Double, summary: String, newId: String = UuidV7.generate()) = mutex.withLock {
+        val e = store.get(id) ?: return@withLock null
+        check(e.status != OutboxStatus.SENDING) { "Eintrag wird gerade gesendet" }
+        val obj = VectraJson.parseToJsonElement(e.body).jsonObject.toMutableMap()
+        val v = obj["value"]?.jsonObject?.toMutableMap() ?: error("Eintrag hat keinen Wert")
+        v["value"] = JsonPrimitive(value)
+        obj["value"] = JsonObject(v)
+        obj["id"] = JsonPrimitive(newId)
+        obj.remove("confirm_anomalies")
+        obj.remove("anomaly_reason")
+        store.remove(id)
+        val n = e.copy(id = newId, body = JsonObject(obj).toString(), summary = summary, status = OutboxStatus.PENDING, problem = null, attempts = 0)
+        store.upsert(n)
+        n
     }
 
     /** Eintrag verwerfen, z. B. „Server übernehmen“ im Konfliktdialog oder ein fehlgeschlagener Eintrag. */

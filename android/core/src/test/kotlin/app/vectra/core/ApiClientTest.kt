@@ -49,6 +49,7 @@ class ApiClientTest {
         val login = server.takeRequest()
         assertEquals("/api/v1/auth/login", login.path)
         assertNull(login.getHeader("X-CSRF-Token"))
+        assertTrue(login.body.readUtf8().contains("\"client_kind\":\"android\""))
 
         api.createReading("v", app.vectra.core.model.OdometerReadingCreate("r", "2026-09-29T06:00:00Z", "Europe/Berlin", app.vectra.core.model.QuantityInput(1.0, "km")))
         val post = server.takeRequest()
@@ -71,5 +72,22 @@ class ApiClientTest {
         server.enqueue(MockResponse().setBody("{}").setHeader("Date", "Mon, 01 Jan 2024 00:00:00 GMT"))
         api.raw("GET", "/health")
         assertTrue(api.clockSkew.toDays() > 365)
+    }
+
+    @Test
+    fun `Nach einem Neustart ist die gespeicherte Sitzung sofort bekannt`() = runTest {
+        val storage = InMemoryCookieStorage()
+        val first = SessionCookieJar(storage)
+        val a = ApiClient(server.url("/").toString(), first)
+        server.enqueue(MockResponse().setBody("""{"id":"a","email":"sam@example.org","display_name":"Sam"}""")
+            .addHeader("Set-Cookie", "vectra_session=s1; Path=/; Max-Age=31536000; HttpOnly")
+            .addHeader("Set-Cookie", "vectra_csrf=c1; Path=/; Max-Age=31536000"))
+        a.login("sam@example.org", "pw")
+        // Neuer Prozess: neue Jar auf demselben Speicher, noch keine Anfrage
+        val restarted = SessionCookieJar(storage) { server.url("/").toString() }
+        assertTrue(restarted.hasSession)
+        assertEquals("c1", restarted.value(SessionCookieJar.CSRF_COOKIE))
+        // Ohne Server-Adresse bleibt sie unbekannt, bis eine Anfrage sie lädt
+        assertTrue(!SessionCookieJar(storage).hasSession)
     }
 }

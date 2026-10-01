@@ -7,6 +7,7 @@ import app.vectra.core.outbox.Outbox
 import app.vectra.core.outbox.Transport
 import app.vectra.core.repo.JsonCache
 import app.vectra.core.repo.VectraRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class RoomJsonCache(private val dao: CacheDao) : JsonCache {
     override suspend fun get(key: String) = dao.get(key)?.let { it.json to it.updatedAt }
@@ -19,7 +20,10 @@ class AppContainer(context: Context) {
     val prefs = Prefs(context)
     val db = VectraDb.create(context)
     val outboxStore = RoomOutboxStore(db.outbox())
-    private val cookies = SessionCookieJar(prefs)
+    private val cookies = SessionCookieJar(prefs) { prefs.server.takeIf { it.isNotBlank() } }
+
+    /** Netzverbindung laut System; VectraApp hält den Wert aktuell. */
+    val online = MutableStateFlow(true)
 
     @Volatile private var current: Pair<String, VectraRepository>? = null
 

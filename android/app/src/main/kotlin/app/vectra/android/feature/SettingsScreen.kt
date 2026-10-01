@@ -44,6 +44,8 @@ fun SettingsScreen(state: SettingsState, onBack: () -> Unit, onTheme: (ThemeMode
                 KeyValue("Name", state.accountName)
                 KeyValue("E-Mail", state.accountEmail)
                 KeyValue("Server", state.server)
+                Text("Du bleibst angemeldet – bis zu einem Jahr, solange du die App mindestens alle 90 Tage öffnest. Geräte beendest du in der Web-App unter Einstellungen.",
+                    style = VType.caption, color = c.muted)
             }
             VCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Darstellung")
@@ -61,10 +63,13 @@ fun SettingsScreen(state: SettingsState, onBack: () -> Unit, onTheme: (ThemeMode
             }
             VCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Synchronisation")
+                KeyValue("Verbindung", if (state.online) "online" else "offline")
                 Text(
                     if (state.pendingCount == 0) "Alle Einträge sind übertragen." else "${state.pendingCount} Einträge warten auf Übertragung.",
                     style = VType.small, color = c.muted,
                 )
+                Text("Sobald wieder eine Verbindung besteht, überträgt die App automatisch. Rückfragen (z. B. ein ungewöhnlicher Kilometerstand) erscheinen als Hinweis zum Beantworten.",
+                    style = VType.caption, color = c.muted)
                 if (kotlin.math.abs(state.clockSkewMinutes) >= 2) {
                     Note(NoteKind.Warn, "Die Uhr dieses Geräts weicht um ${kotlin.math.abs(state.clockSkewMinutes)} Minuten von der Serverzeit ab. Einträge mit Zeitpunkt in der Zukunft lehnt der Server ab.")
                 }

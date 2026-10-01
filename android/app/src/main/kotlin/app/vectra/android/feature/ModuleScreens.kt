@@ -54,7 +54,7 @@ private fun StatusNotes(freshness: Freshness, error: String?) {
 
 /** Wartung: Fälligkeiten nach Dringlichkeit, Erledigen, Zugang zur Servicehistorie. */
 @Composable
-fun MaintenanceScreen(state: MaintenanceState, onComplete: (DueStatus) -> Unit, onService: () -> Unit, onRefresh: () -> Unit) {
+fun MaintenanceScreen(state: MaintenanceState, onComplete: (DueStatus) -> Unit, onService: () -> Unit, onRefresh: () -> Unit, onBook: () -> Unit = {}) {
     val c = V.colors
     val v = state.vehicle
     Column(Modifier.fillMaxSize().background(c.bg)) {
@@ -70,7 +70,7 @@ fun MaintenanceScreen(state: MaintenanceState, onComplete: (DueStatus) -> Unit, 
                         }
                         Text(
                             when {
-                                state.due.isEmpty() && !state.loading -> "Noch keine Wartungen geplant. Lege sie in der Web-App an."
+                                state.due.isEmpty() && !state.loading -> "Noch keine Wartungen geplant. Übernimm das Wartungsbuch deines Modells."
                                 urgent == 0 -> "Alles im grünen Bereich."
                                 urgent == 1 -> "1 Wartung ist fällig."
                                 else -> "$urgent Wartungen sind fällig."
@@ -92,6 +92,9 @@ fun MaintenanceScreen(state: MaintenanceState, onComplete: (DueStatus) -> Unit, 
                     if (t.isNotBlank()) Text(t, style = VType.small, color = c.muted)
                     if (v?.canEdit == true && d.level != "completed") Text("Antippen, um als erledigt zu markieren", style = VType.caption, color = c.link)
                 }
+            }
+            if (v?.canEdit == true) item {
+                VButton("Wartungsbuch übernehmen", onBook, Modifier.fillMaxWidth(), kind = if (state.due.isEmpty()) ButtonKind.Accent else ButtonKind.Outline, icon = VIcons.doc, height = 48.dp)
             }
             item { VButton("Servicehistorie", onService, Modifier.fillMaxWidth(), kind = ButtonKind.Outline, icon = VIcons.receipt, height = 48.dp) }
         }

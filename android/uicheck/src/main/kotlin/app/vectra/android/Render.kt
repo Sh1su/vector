@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import app.vectra.android.feature.ApplyBookDialog
 import app.vectra.android.feature.CostsScreen
 import app.vectra.android.feature.CostsState
 import app.vectra.android.feature.DocumentsScreen
@@ -48,6 +49,8 @@ import app.vectra.core.model.DisplayValue
 import app.vectra.core.model.DistanceShare
 import app.vectra.core.model.DocumentMeta
 import app.vectra.core.model.DueStatus
+import app.vectra.core.model.MaintenanceBook
+import app.vectra.core.model.MaintenanceBookItem
 import app.vectra.core.model.Money
 import app.vectra.core.model.OdometerReading
 import app.vectra.core.model.QuantityInput
@@ -91,6 +94,13 @@ private val p1 = ReadingDraft.toOutbox("v1", 142_900.0, "km", Instant.parse("202
 )
 private val offline = ReadingDraft.toOutbox("v1", 143_600.0, "km")
 
+private val books = listOf(
+    MaintenanceBook("hyundai-tucson-nx4", "Hyundai", "Tucson", "NX4", "Hyundai Tucson (NX4) – Wartungsplan", "Richtwerte nach dem Hyundai-Wartungsplan; bitte mit dem Serviceheft abgleichen.",
+        listOf(MaintenanceBookItem("inspection", "Inspektion", "service", 12, QuantityInput(15000.0, "km")), MaintenanceBookItem("hu", "Hauptuntersuchung (HU/AU)", "legal_inspection", 24, null, 36))),
+    MaintenanceBook("leapmotor-b10", "Leapmotor", "B10", null, "Leapmotor B10 – Wartungsplan", "Richtwerte; bitte mit dem Serviceheft abgleichen.",
+        listOf(MaintenanceBookItem("inspection", "Inspektion", "service", 24, QuantityInput(30000.0, "km")))),
+)
+
 private val due = listOf(
     DueStatus("m1", "v1", "HU/AU", "due", "time", "2026-10-20", 20),
     DueStatus("m2", "v1", "Ölwechsel", "upcoming", "distance", "2027-03-10", 161, distanceRemaining = DisplayValue(1300.0, "km")),
@@ -126,7 +136,8 @@ fun main(args: Array<String>) {
         "home" to { Phone(Tab.Home) { HomeScreen(HomeState(golf, current, readings.take(3), loading = false), { Image(logo("vectra-schriftzug-negativ.png"), "Vectra", Modifier.width(109.dp).height(26.dp)) }, {}, {}, {}, {}, {}) } },
         "home-attention" to { Phone(Tab.Home) { HomeScreen(HomeState(golf, current, readings.take(2), listOf(p1, offline), loading = false), { Image(logo("vectra-schriftzug-negativ.png"), "Vectra", Modifier.width(109.dp).height(26.dp)) }, {}, {}, {}, {}, {}) } },
         "odometer" to { Phone(Tab.More) { OdometerScreen(OdometerState(golf, current, readings, listOf("Apr", "Mai", "Jun", "Jul", "Aug", "Sep").zip(listOf(910.0, 1240.0, 1480.0, 2210.0, 1030.0, 842.0)).map { MonthBar(it.first, it.second) }, listOf(p1, offline), loading = false), {}, {}, {}) } },
-        "pending-dialog" to { PendingDialog(p1, {}, { _, _ -> }, {}, {}) },
+        "pending-dialog" to { PendingDialog(p1, {}, { _, _ -> }, {}, {}, onCorrect = {}) },
+        "book-dialog" to { ApplyBookDialog(books, golf.copy(make = "Hyundai", model = "Tucson", firstRegistration = "2024-05-15"), 21_800.0, null, false, {}, { _, _, _, _ -> }) },
         "vehicles" to { Phone(Tab.More) { VehiclesScreen(VehiclesState(listOf(golf, transit), mapOf("v1" to "143.520 km", "v2" to "88.210 km"), "v1", loading = false), {}, {}) } },
         "more" to { Phone(Tab.More) { MoreScreen {} } },
         "maintenance" to { Phone(Tab.Maintenance) { MaintenanceScreen(MaintenanceState(golf, due, services, loading = false), {}, {}, {}) } },

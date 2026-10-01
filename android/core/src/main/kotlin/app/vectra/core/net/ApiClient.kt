@@ -20,6 +20,10 @@ import app.vectra.core.model.TripStart
 import app.vectra.core.model.VehicleImage
 import app.vectra.core.model.VehicleImageCreate
 import app.vectra.core.model.LoginRequest
+import app.vectra.core.model.MaintenanceBook
+import app.vectra.core.model.MaintenanceBookApply
+import app.vectra.core.model.MaintenanceBookApplyResult
+import app.vectra.core.model.MaintenanceBookPage
 import app.vectra.core.model.OdometerDistance
 import app.vectra.core.model.OdometerReading
 import app.vectra.core.model.OdometerReadingCreate
@@ -108,8 +112,8 @@ class ApiClient(
 
     // --- Identity ---
 
-    suspend fun login(email: String, password: String): Account =
-        call("POST", "/auth/login", Account.serializer(), encode(LoginRequest(email, password)))
+    suspend fun login(email: String, password: String, clientKind: String = "android"): Account =
+        call("POST", "/auth/login", Account.serializer(), encode(LoginRequest(email, password, clientKind)))
 
     suspend fun logout() {
         runCatching { raw("POST", "/auth/logout") }
@@ -146,6 +150,12 @@ class ApiClient(
         val r = raw("POST", "/vehicles/$vehicleId/maintenance-items/$itemId/completions", encode(body), mapOf("Idempotency-Key" to idempotencyKey))
         if (!r.isSuccess) throw ApiException(r.status, r.problem())
     }
+
+    suspend fun maintenanceBooks(): List<MaintenanceBook> =
+        call("GET", "/maintenance-books", MaintenanceBookPage.serializer()).items
+
+    suspend fun applyMaintenanceBook(vehicleId: String, bookId: String, body: MaintenanceBookApply): MaintenanceBookApplyResult =
+        call("POST", "/vehicles/$vehicleId/maintenance-books/$bookId/apply", MaintenanceBookApplyResult.serializer(), encode(body))
 
     // --- Service ---
 

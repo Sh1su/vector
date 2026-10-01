@@ -28,6 +28,7 @@ import app.vectra.core.model.CostItem
 import app.vectra.core.model.CostOccurrence
 import app.vectra.core.model.DocumentCreate
 import app.vectra.core.model.DueStatus
+import app.vectra.core.model.MaintenanceBookApply
 import app.vectra.core.model.Money
 import app.vectra.core.model.QuantityInput
 import app.vectra.core.model.ServiceEntryCreate
@@ -47,9 +48,11 @@ import app.vectra.core.net.ApiClient
 import app.vectra.core.net.ApiException
 import app.vectra.core.net.Diagnosis
 import app.vectra.core.outbox.OutboxEntry
+import app.vectra.core.outbox.OutboxStatus
 import app.vectra.core.util.Format
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +75,8 @@ sealed interface Route {
     data object Documents : Route
 }
 
+private val attention = setOf(OutboxStatus.NEEDS_CONFIRMATION, OutboxStatus.CONFLICT, OutboxStatus.FAILED)
+
 /** Was nach der Dateiauswahl mit der Datei geschehen soll. */
 sealed interface PickPurpose {
     data object Document : PickPurpose
@@ -87,6 +92,7 @@ sealed interface DialogState {
     data object Logout : DialogState
     data class Complete(val item: DueStatus) : DialogState
     data object AddService : DialogState
+    data object ApplyBook : DialogState
     data object AddCost : DialogState
     data object StartTrip : DialogState
     data class FinishTrip(val trip: Trip) : DialogState
@@ -119,8 +125,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var refreshJob: Job? = null
 
+    /** Kurzer Hinweis am unteren Rand (z. B. „Wieder online – synchronisiert“). */
+    val notice = MutableStateFlow<String?>(null)
+    val online: StateFlow<Boolean> = c.online
+
+    /** Einträge, zu denen in dieser Sitzung schon eine Rückfrage gezeigt wurde. */
+    private val alerted = HashSet<String>()
+
     init {
         if (c.hasSession) refresh()
+        // Verbindung wieder da: sofort synchronisieren und neu laden.
+        viewModelScope.launch {
+            var was = c.online.value
+            c.online.collect { now ->
+                if (now && !was && c.hasSession && _stack.value.lastOrNull() != Route.Login) {
+                    val n = pending.value.count { it.status == OutboxStatus.PENDING }
+                    notice.value = if (n > 0) "Wieder online – $n ${if (n == 1) "Eintrag wird" else "Einträge werden"} übertragen" else "Wieder online – Daten aktualisiert"
+                    syncNow()
+                } else if (!now && was) {
+                    notice.value = "Offline – Kilometerstände werden gespeichert und später übertragen"
+                }
+                was = now
+            }
+        }
+        // Rückfragen der Synchronisierung (Befund, Konflikt, Fehler) als Hinweis-Box zeigen.
+        viewModelScope.launch {
+            combine(pending, dialog) { list, d -> list to d }.collect { (list, d) ->
+                if (d != null || _stack.value.lastOrNull() == Route.Login) return@collect
+                val next = list.firstOrNull { it.status in attention && it.id !in alerted } ?: return@collect
+                alerted += next.id
+                dialog.value = DialogState.Pending(next)
+            }
+        }
         // Sobald Einträge übertragen wurden, die Anzeige mit dem Serverstand auffrischen.
         viewModelScope.launch {
             var last = -1
@@ -279,7 +315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 val due = repo.due(v.id)
                 val services = repo.services(v.id)
-                maintenance.value = MaintenanceState(v, due.value, services.value, due.fresh(), loading = false)
+                maintenance.value = MaintenanceState(v, due.value, services.value, due.fresh(), loading = false, books = maintenance.value.books)
                 home.update { it.copy(nextDue = due.value.firstOrNull { d -> d.level != "unknown" } ?: due.value.firstOrNull()) }
             }.onFailure { e -> maintenance.update { it.copy(vehicle = v, loading = false, error = message(e)) } }
         }
@@ -489,6 +525,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Konflikt-Antwort „Wert korrigieren“: neuer Stand ersetzt den Eintrag und wird neu geprüft. */
+    fun correct(entry: OutboxEntry, value: Double) {
+        dialog.value = null
+        viewModelScope.launch {
+            val unit = home.value.vehicle?.takeIf { it.id == entry.vehicleId }?.meterUnit ?: "km"
+            c.repository()?.outbox?.amendValue(entry.id, value, "Kilometerstand ${Format.number(value, 1)} $unit")
+            SyncWorker.syncNow(getApplication())
+        }
+    }
+
+    fun dismissNotice() { notice.value = null }
+
+    /** Wartungsbücher laden (einmal je Sitzung) und den Übernehmen-Dialog öffnen. */
+    fun openBooks() {
+        openDialog(DialogState.ApplyBook)
+        if (maintenance.value.books.isNotEmpty()) return
+        val repo = c.repository() ?: return
+        viewModelScope.launch {
+            try {
+                val list = repo.api.maintenanceBooks()
+                maintenance.update { it.copy(books = list) }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                formError.value = FormError(message(e))
+            }
+        }
+    }
+
+    fun applyBook(bookId: String, sinceNew: Boolean, date: String, km: Double?) = submit { repo, v ->
+        val r = repo.api.applyMaintenanceBook(v.id, bookId, MaintenanceBookApply(date, km?.let { QuantityInput(it, "km") }, sinceNew))
+        notice.value = "${r.created.size} ${if (r.created.size == 1) "Wartung" else "Wartungen"} angelegt" +
+            if (r.skipped.isNotEmpty()) ", ${r.skipped.size} schon vorhanden" else ""
+    }
+
     fun discard(entry: OutboxEntry) {
         dialog.value = null
         viewModelScope.launch { c.repository()?.outbox?.discard(entry.id) }
@@ -520,5 +590,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pendingCount = pendingCount,
         clockSkewMinutes = c.repository()?.api?.clockSkew?.toMinutes() ?: 0,
         version = BuildConfig.VERSION_NAME,
+        online = c.online.value,
     )
 }

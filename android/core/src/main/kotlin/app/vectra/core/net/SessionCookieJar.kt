@@ -3,6 +3,7 @@ package app.vectra.core.net
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Speicher für die Sitzungs-Cookies. Die App legt sie im privaten Speicher ab, Tests im RAM. */
 interface CookieStorage {
@@ -20,14 +21,19 @@ class InMemoryCookieStorage : CookieStorage {
  * Hält `vectra_session` und `vectra_csrf` (ADR-015). Übergangslösung, bis `POST /auth/token`
  * umgesetzt ist; danach nutzt die App ein API-Token mit Scopes.
  */
-class SessionCookieJar(private val storage: CookieStorage) : CookieJar {
+class SessionCookieJar(private val storage: CookieStorage, private val origin: () -> String? = { null }) : CookieJar {
     private val lock = Any()
     private var cookies: MutableList<Cookie> = mutableListOf()
     private var loaded = false
 
-    private fun ensureLoaded(url: HttpUrl) {
+    /**
+     * Lädt die gespeicherten Cookies. Ohne Anfrage-URL dient die Server-Adresse ([origin]) als Bezug,
+     * damit die App nach einem Neustart sofort erkennt, dass sie noch angemeldet ist.
+     */
+    private fun ensureLoaded(url: HttpUrl?) {
         if (loaded) return
-        cookies = storage.load().mapNotNull { Cookie.parse(url, it) }.toMutableList()
+        val base = url ?: origin()?.toHttpUrlOrNull() ?: return
+        cookies = storage.load().mapNotNull { Cookie.parse(base, it) }.toMutableList()
         loaded = true
     }
 
@@ -47,7 +53,11 @@ class SessionCookieJar(private val storage: CookieStorage) : CookieJar {
         cookies.filter { it.matches(url) }
     }
 
-    fun value(name: String): String? = synchronized(lock) { cookies.firstOrNull { it.name == name }?.value }
+    fun value(name: String): String? = synchronized(lock) {
+        ensureLoaded(null)
+        val now = System.currentTimeMillis()
+        cookies.firstOrNull { it.name == name && it.expiresAt > now }?.value
+    }
 
     fun clear() = synchronized(lock) {
         cookies.clear()

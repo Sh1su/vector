@@ -138,4 +138,26 @@ class OutboxTest {
         assertFalse(body.containsKey("confirm_anomalies"))
         assertEquals("Kilometerstand 142.950 km", e.summary)
     }
+
+    @Test
+    fun `Wert korrigieren sendet mit neuer ID und ohne Bestaetigung`() = runTest {
+        val t = Scripted(resp(422, p1), ok())
+        val o = Outbox(InMemoryOutboxStore(), t)
+        val e = entry("v1", 90.0, 1)
+        o.enqueue(e)
+        o.sync()
+        assertEquals(OutboxStatus.NEEDS_CONFIRMATION, o.entries().single().status)
+        val n = o.amendValue(e.id, 190.0, "Kilometerstand 190 km")!!
+        val pending = o.entries().single()
+        assertEquals(n.id, pending.id)
+        assertTrue(pending.id != e.id)
+        assertEquals(1L, pending.capturedAt)
+        val body = Json.parseToJsonElement(pending.body).jsonObject
+        assertEquals("190.0", body["value"]!!.jsonObject["value"]!!.jsonPrimitive.content)
+        assertEquals(n.id, body["id"]!!.jsonPrimitive.content)
+        assertFalse(body.containsKey("confirm_anomalies"))
+        o.sync()
+        assertTrue(o.entries().isEmpty())
+        assertTrue(t.calls[1].second!!.contains(n.id))
+    }
 }

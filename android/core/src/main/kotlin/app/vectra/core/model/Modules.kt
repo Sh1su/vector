@@ -33,6 +33,41 @@ data class CompletionCreate(
     val reason: String? = null,
 )
 
+@Serializable
+data class MaintenanceBookItem(
+    val key: String,
+    val title: String,
+    val category: String,
+    @SerialName("interval_months") val intervalMonths: Int? = null,
+    @SerialName("interval_distance") val intervalDistance: QuantityInput? = null,
+    @SerialName("first_interval_months") val firstIntervalMonths: Int? = null,
+)
+
+/** Wartungsbuch: Vorlage mit Herstellerintervallen (GET /maintenance-books). */
+@Serializable
+data class MaintenanceBook(
+    val id: String,
+    val make: String,
+    val model: String,
+    val variant: String? = null,
+    val title: String,
+    val source: String,
+    val items: List<MaintenanceBookItem> = emptyList(),
+)
+
+@Serializable
+data class MaintenanceBookPage(val items: List<MaintenanceBook>)
+
+@Serializable
+data class MaintenanceBookApply(
+    @SerialName("anchor_date") val anchorDate: String? = null,
+    @SerialName("anchor_odometer") val anchorOdometer: QuantityInput? = null,
+    @SerialName("since_new") val sinceNew: Boolean = false,
+)
+
+@Serializable
+data class MaintenanceBookApplyResult(val created: List<kotlinx.serialization.json.JsonElement> = emptyList(), val skipped: List<String> = emptyList())
+
 // --- Service ---
 
 @Serializable

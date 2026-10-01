@@ -36,6 +36,13 @@ Die Screens sind zustandslos und plattformneutral (`app/src/main/kotlin/app/vect
 - **Online-Schreiben:** Diese Erfassungen gehen direkt an den Server; ohne Verbindung meldet der Dialog das. Die Outbox deckt weiterhin nur Kilometerstände ab. Gelesen wird mit Cache-Rückfall (offline zuletzt geladener Stand).
 - `:core`: DTOs in `model/Modules.kt`, neue Endpunkte im `ApiClient` (inkl. Multipart-Upload und Vorschau), `MoneyFormat` (kleinste Einheit, ADR-029).
 
+## Angemeldet bleiben, Synchronisierung, Rückfragen
+
+- **Angemeldet bleiben:** Die gespeicherten Cookies werden beim Start sofort geladen (vorher erst bei der ersten Anfrage, weshalb die App nach einem Neustart zur Anmeldung sprang). Die App meldet sich mit `client_kind=android` an: Sitzung bis 365 Tage, Leerlauf 90 Tage. Erst eine abgelaufene oder beendete Sitzung führt zur Anmeldung zurück; die Outbox bleibt dabei erhalten.
+- **Synchronisierung bei Verbindung:** `VectraApp` beobachtet das Netz (`registerDefaultNetworkCallback`). Wird die Verbindung wieder hergestellt, startet sofort ein Sync (`SyncWorker.syncNow`) und die Anzeige lädt neu; ein Hinweis am unteren Rand meldet „Wieder online“ bzw. „Offline“.
+- **Rückfragen als Hinweis-Box:** Hat die Synchronisierung eine Rückfrage (Befund nach ADR-010, Konflikt, abgelehnter Eintrag), öffnet sich der Dialog von selbst. Der Nutzer antwortet: *Der Wert stimmt so* (mit Begründung), *Wert korrigieren* (neuer Stand, neue ID, wird neu geprüft – `Outbox.amendValue`), *Verwerfen* oder *Später entscheiden*.
+- **Wartungsbuch übernehmen:** auf dem Wartungs-Tab; Modell wird nach Marke/Modell vorgewählt.
+
 ## Prüfung
 
 | Prüfung | Ergebnis in dieser Umgebung |

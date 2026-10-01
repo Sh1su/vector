@@ -35,6 +35,8 @@ import app.vectra.android.ui.VField
 import app.vectra.android.ui.VIcons
 import app.vectra.android.ui.VType
 import app.vectra.core.model.DueStatus
+import app.vectra.core.model.MaintenanceBook
+import app.vectra.core.model.Vehicle
 import app.vectra.core.model.Trip
 import app.vectra.core.model.TripCategory
 import app.vectra.core.util.Format
@@ -208,5 +210,55 @@ fun AddDocumentDialog(fileName: String, error: FormError?, busy: Boolean, onDism
         Text(fileName, style = VType.small, color = V.colors.muted)
         VField("Titel", title, { title = it }, VIcons.doc)
         ChoiceRow("Typ", docTypes, type) { type = it }
+    }
+}
+
+private val dayFmt = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+private fun isoToDay(iso: String?): String = iso?.let { runCatching { java.time.LocalDate.parse(it.take(10)).format(dayFmt) }.getOrNull() } ?: ""
+private fun dayToIso(s: String): String? = runCatching { java.time.LocalDate.parse(s.trim(), dayFmt).toString() }.getOrNull()
+
+/** Wartungsbuch übernehmen: Modell wählen, Basis (Neufahrzeug oder letzte Inspektion), Datum und Stand. */
+@Composable
+fun ApplyBookDialog(
+    books: List<MaintenanceBook>,
+    vehicle: Vehicle?,
+    lastKm: Double?,
+    error: FormError?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (bookId: String, sinceNew: Boolean, date: String, km: Double?) -> Unit,
+) {
+    val match = books.firstOrNull { b ->
+        vehicle?.make?.contains(b.make, ignoreCase = true) == true && vehicle.model?.contains(b.model, ignoreCase = true) == true
+    } ?: books.firstOrNull()
+    var bookId by remember(match?.id) { mutableStateOf(match?.id ?: "") }
+    val book = books.firstOrNull { it.id == bookId }
+    val reg = vehicle?.firstRegistration
+    var base by remember { mutableStateOf(if (reg != null) "new" else "last") }
+    var date by remember { mutableStateOf(if (reg != null) isoToDay(reg) else isoToDay(java.time.LocalDate.now().toString())) }
+    var km by remember { mutableStateOf(if (reg != null) "0" else lastKm?.let { Format.number(it, 0).replace(".", "") } ?: "") }
+    val iso = dayToIso(date)
+    val parsedKm = Format.parseNumber(km)
+    FormDialog("Wartungsbuch übernehmen", error, busy, book != null && iso != null && (km.isBlank() || parsedKm != null), onDismiss, {
+        onSave(bookId, base == "new", iso!!, parsedKm)
+    }) {
+        if (books.isEmpty()) {
+            Text("Lade Wartungsbücher …", style = VType.small, color = V.colors.muted)
+        } else {
+            ChoiceRow("Fahrzeugmodell", books.map { it.id to "${it.make} ${it.model}" }, bookId) { bookId = it }
+            book?.let { b ->
+                Note(NoteKind.Warn, b.source)
+                Text("${b.items.size} Positionen: " + b.items.joinToString(", ") { it.title }, style = VType.small, color = V.colors.muted)
+            }
+            ChoiceRow("Ab wann rechnen?", listOf("new" to "Neufahrzeug", "last" to "Letzte Inspektion"), base) {
+                base = it
+                if (it == "new") { date = isoToDay(reg); km = "0" } else { date = isoToDay(java.time.LocalDate.now().toString()); km = lastKm?.let { v -> Format.number(v, 0).replace(".", "") } ?: "" }
+            }
+            VField(if (base == "new") "Erstzulassung" else "Letzte Inspektion am", date, { date = it }, VIcons.calendar, placeholder = "TT.MM.JJJJ",
+                error = if (date.isNotBlank() && iso == null) "Datum als TT.MM.JJJJ eingeben." else null)
+            VField("Kilometerstand damals (optional)", km, { km = it }, VIcons.gauge, keyboardType = KeyboardType.Decimal, trailing = "km")
+            Text("Alle Intervalle lassen sich danach in der Web-App anpassen.", style = VType.caption, color = V.colors.muted)
+        }
     }
 }

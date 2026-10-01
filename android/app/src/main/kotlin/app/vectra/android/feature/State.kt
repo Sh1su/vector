@@ -79,6 +79,7 @@ data class SettingsState(
     val pendingCount: Int = 0,
     val clockSkewMinutes: Long = 0,
     val version: String = "",
+    val online: Boolean = true,
 )
 
 /** Befunde eines Outbox-Eintrags für den Bestätigungsdialog (ADR-010, ADR-021). */
@@ -99,6 +100,7 @@ data class MaintenanceState(
     val freshness: Freshness = Freshness(),
     val loading: Boolean = true,
     val error: String? = null,
+    val books: List<app.vectra.core.model.MaintenanceBook> = emptyList(),
 )
 
 data class CostsState(

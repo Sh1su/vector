@@ -38,6 +38,15 @@ Neue Seiten `Fahrten`, `Wartung`, `Servicehistorie`, `Kosten`; die Übersicht ze
 - Web: Seite „Dokumente“, Fahrzeugfoto auf der Fahrzeugkarte und der Übersicht, Anhänge in Servicehistorie und Kosten.
 - Android: alle Module dieser Iteration plus Dokumente und Fahrzeugfoto, siehe `10-android.md`.
 
+## Einstellungen und Wartungsbücher (Teil 3)
+
+- **Einstellungen (Web):** Profil (Anzeigename), Passwort ändern (`POST /me/password`, beendet alle anderen Sitzungen), Darstellung, Vorgaben (Zeitzone, Währung, Einheiten, Foto-Standort), Wartungsschwellen, angemeldete Geräte (`GET/DELETE /me/sessions`).
+- **Wartungsschwellen:** Reihenfolge Definition → Einstellungen des Fahrzeughalters → Installationsvorgabe (MA-05).
+- **Wartungsbücher** (`backend/internal/maintenance/books/*.json`): Hyundai Tucson NX4 (11 Positionen) und Leapmotor B10 (10 Positionen). `GET /maintenance-books`, `POST /vehicles/{id}/maintenance-books/{book}/apply` legt gewöhnliche Wartungsdefinitionen an (idempotent; vorhandene Titel werden übersprungen). Basis ist die Erstzulassung (erste Intervalle wie HU nach 36 Monaten oder Kühlmittel nach 10 Jahren/210.000 km gelten) oder die letzte Inspektion.
+- Die Intervalle sind **Richtwerte** und tragen diesen Hinweis; sie müssen mit dem Serviceheft des eigenen Fahrzeugs abgeglichen werden. Weitere Modelle: eine JSON-Datei im selben Ordner.
+- **App-Sitzung:** Login mit `client_kind=android` hält die Sitzung 90 Tage Leerlauf, höchstens 365 Tage (Web: 7/30 Tage).
+- Tests: `server/settings_test.go` (Wartungsbücher, Passwort, Sitzungen, Schwellen des Halters).
+
 ## Annahmen und offene Punkte
 
 - Schwellen: Definition → Installationsvorgabe (30/7 Tage, 1 500/500 km). Eine Nutzereinstellung dazwischen folgt mit der Einstellungsseite.

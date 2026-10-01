@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -21,7 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.vectra.android.ui.Note
+import app.vectra.android.ui.NoteKind
+import app.vectra.android.ui.VIcons
+import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -30,6 +36,7 @@ import app.vectra.android.feature.AddCostDialog
 import app.vectra.android.feature.AddDocumentDialog
 import app.vectra.android.feature.AddReadingDialog
 import app.vectra.android.feature.AddServiceDialog
+import app.vectra.android.feature.ApplyBookDialog
 import app.vectra.android.feature.CompleteDialog
 import app.vectra.android.feature.ConfirmDialog
 import app.vectra.android.feature.CostsScreen
@@ -140,7 +147,7 @@ private fun AppRoot(vm: MainViewModel) {
                     }
                     Tab.Maintenance -> {
                         val s by vm.maintenance.collectAsStateWithLifecycle()
-                        MaintenanceScreen(s, onComplete = { vm.openDialog(DialogState.Complete(it)) }, onService = { vm.open(Route.Service) }, onRefresh = vm::syncNow)
+                        MaintenanceScreen(s, onComplete = { vm.openDialog(DialogState.Complete(it)) }, onService = { vm.open(Route.Service) }, onRefresh = vm::syncNow, onBook = vm::openBooks)
                     }
                     Tab.Costs -> {
                         val s by vm.costs.collectAsStateWithLifecycle()
@@ -182,8 +189,9 @@ private fun AppRoot(vm: MainViewModel) {
                 }
                 Route.Settings -> {
                     val themeMode by vm.theme.collectAsStateWithLifecycle()
+                    val online by vm.online.collectAsStateWithLifecycle()
                     SettingsScreen(
-                        vm.settingsState(pending.size).copy(theme = themeMode),
+                        vm.settingsState(pending.size).copy(theme = themeMode, online = online),
                         onBack = vm::back,
                         onTheme = vm::setTheme,
                         onSync = vm::syncNow,
@@ -191,6 +199,11 @@ private fun AppRoot(vm: MainViewModel) {
                     )
                 }
                 Route.Login -> Unit
+            }
+            val notice by vm.notice.collectAsStateWithLifecycle()
+            notice?.let { msg ->
+                LaunchedEffect(msg) { delay(4000); vm.dismissNotice() }
+                Note(NoteKind.Info, msg, Modifier.align(Alignment.BottomCenter).padding(16.dp), icon = VIcons.sync)
             }
         }
         TabBar(activeTab, vm::selectTab)
@@ -219,12 +232,17 @@ private fun AppRoot(vm: MainViewModel) {
                 onConfirm = { codes, reason -> vm.confirm(entry, codes, reason) },
                 onDiscard = { vm.discard(entry) },
                 onRetry = { vm.retry(entry) },
+                onCorrect = { value -> vm.correct(entry, value) },
             )
         }
         is DialogState.Complete -> CompleteDialog(d.item, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = { km -> vm.complete(d.item, km) })
         DialogState.AddService -> {
             val m by vm.maintenance.collectAsStateWithLifecycle()
             AddServiceDialog(m.vehicle?.defaultCurrency ?: "EUR", vm.lastKm(), m.due, formError, busy, onDismiss = vm::closeDialog, onSave = vm::addService)
+        }
+        DialogState.ApplyBook -> {
+            val m by vm.maintenance.collectAsStateWithLifecycle()
+            ApplyBookDialog(m.books, m.vehicle, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = vm::applyBook)
         }
         DialogState.AddCost -> {
             val cs by vm.costs.collectAsStateWithLifecycle()
