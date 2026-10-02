@@ -39,5 +39,6 @@ export function PlausibilityAlert({ anomalies, onConfirm, onEdit, busy }:
 }
 
 function label(code: string) {
-  return ({ P1: 'Rückläufig', P2: 'Größer als Folgewert', P3: 'Unrealistischer Sprung', P4: 'Zukunft', VIN_NONSTANDARD: 'FIN', VIN_DUPLICATE: 'FIN doppelt' } as Record<string, string>)[code] ?? code
+  return ({ P1: 'Rückläufig', P2: 'Größer als Folgewert', P3: 'Unrealistischer Sprung', P4: 'Zukunft', VIN_NONSTANDARD: 'FIN', VIN_DUPLICATE: 'FIN doppelt',
+    F1: 'Menge größer als Tank', F2: 'Energieträger', F3: 'Ladezustand', OIL_CAPACITY: 'Menge größer als Füllmenge', OIL_OVERFILL: 'Überfüllt?' } as Record<string, string>)[code] ?? code
 }

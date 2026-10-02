@@ -22,12 +22,12 @@ Bis zu einer anderen Entscheidung des Auftraggebers gelten die dort empfohlenen 
 | It. | Inhalt | Ergebnis |
 |---|---|---|
 | **1** (diese) | Fundament + erster vertikaler Schnitt: Repository-Gerüst, Codegenerierung, Migrationen, Identity-Kern (Ersteinrichtung, lokale Anmeldung, Sitzung, CSRF, Rechteprüfung), Vehicles, Odometer (alle ODO-Regeln), Web-App im Vectra-Design (Anmeldung, Übersicht, Fahrzeuge, Kilometerstand, Hell/Dunkel), Compose-Deployment, CI | lauffähiges System: Fahrzeug anlegen, Kilometerstände erfassen mit Plausibilitätsdialog |
-| 2 | Fuel, Oil, ServiceHistory, Maintenance, Costs (Kostenbuch) mit allen Soll-Tests; Web-Seiten Kraftstoff, Öl, Servicehistorie, Wartung, Kosten | Fachkern vollständig |
+| 2 | Fuel, Oil, ServiceHistory, Maintenance, Costs (Kostenbuch) mit allen Soll-Tests; Web-Seiten Kraftstoff, Öl, Servicehistorie, Wartung, Kosten | Fachkern vollständig. **Teil 1 erledigt** (Fuel, Oil, Maintenance mit Vorlagen, Einstellungen, vorgezogen der Assistent aus It. 7): `20-iteration-2.md` |
 | 3 | Trips, Documents (Storage, Beweisfotos), Notes, Audit-Ansicht, Freigaben/Einladungen, OIDC | alle MVP-Module |
 | 4 | Notifications (E-Mail, UnifiedPush, FCM optional, Webhooks), Jobs, Backup/Restore, i18n EN | betriebsbereit |
 | 5 | Import LubeLogger (LiteDB-Leser), CSV-Import, Export | Migration |
 | 6 | Android: Tachofoto mit Hash, UnifiedPush, Fahrten, Kraftstoff und Öl mobil (die App-Basis entsteht auf Wunsch des Auftraggebers ab Iteration 1 parallel, siehe `10-android.md`) | App |
-| 7 | Assistant (optional) | KI |
+| 7 | Assistant (optional): RAG über Dokumente | KI (Grundfunktion auf Wunsch des Auftraggebers in It. 2 vorgezogen) |
 
 Jede Iteration endet mit grüner CI, aktualisierten Tests und einem kurzen Bericht in diesem Ordner.
 

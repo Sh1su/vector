@@ -49,3 +49,35 @@ export const api = {
   patch: <T,>(p: string, b: unknown, etag: string) => request<T>('PATCH', p, b, { 'If-Match': etag }).then((r) => r.data),
   del: (p: string, etag: string) => request<void>('DELETE', p, undefined, { 'If-Match': etag }),
 }
+
+/** POST mit Server-Sent-Events-Antwort; ruft onEvent je Ereignis auf. */
+export async function streamPost(path: string, body: unknown, onEvent: (event: string, data: unknown) => void): Promise<void> {
+  const res = await fetch('/api/v1' + path, {
+    method: 'POST', credentials: 'same-origin', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'X-CSRF-Token': csrfToken() },
+  })
+  if (!res.ok || !res.body) {
+    const text = await res.text()
+    throw new ProblemError(text ? JSON.parse(text) : { status: res.status, title: res.statusText, type: 'about:blank' })
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let i: number
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, i)
+      buf = buf.slice(i + 2)
+      let event = 'message'
+      let data = ''
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7)
+        else if (line.startsWith('data: ')) data += line.slice(6)
+      }
+      onEvent(event, data ? JSON.parse(data) : null)
+    }
+  }
+}

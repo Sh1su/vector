@@ -71,3 +71,24 @@ export function EmptyState({ icon, title, text, action }: { icon: IconName; titl
     </div>
   )
 }
+
+export function Kpi({ icon, label, value, note }: { icon: IconName; label: string; value: string; note: string }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[16px] border border-line bg-card p-4">
+      <div className="flex items-center gap-2 text-[13px] font-medium text-muted"><span className="text-link"><Icon name={icon} /></span>{label}</div>
+      <div className="tabular font-display text-[22px] font-semibold">{value}</div>
+      <div className="text-xs text-muted">{note}</div>
+    </div>
+  )
+}
+
+export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1 rounded-[12px] bg-soft p-1">
+      {options.map(([k, l]) => (
+        <button key={k} type="button" role="radio" aria-checked={k === value} onClick={() => onChange(k)}
+          className={`h-9 rounded-[9px] px-3 text-sm font-semibold ${k === value ? 'bg-card text-text shadow-sm' : 'text-muted'}`}>{l}</button>
+      ))}
+    </div>
+  )
+}

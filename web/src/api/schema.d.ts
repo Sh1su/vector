@@ -1028,6 +1028,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maintenance-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vorlagen für Wartungspläne (OP-MA-1)
+         * @description Eingebaute Richtwerte, z. B. für Mercedes-Benz CDI-Transporter. Der Client übernimmt ausgewählte Positionen mit eigenen Intervallen und Ankern über `createMaintenanceItem`.
+         */
+        get: operations["listMaintenanceTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vehicles/{vehicle_id}/service-entries": {
         parameters: {
             query?: never;
@@ -3027,6 +3047,34 @@ export interface components {
         };
         DueStatusPage: {
             items: components["schemas"]["DueStatus"][];
+            next_cursor: string | null;
+        };
+        MaintenanceTemplateItem: {
+            key: string;
+            title: string;
+            description?: string;
+            /** @enum {string} */
+            category: "service" | "legal_inspection" | "tires" | "fluids" | "brakes" | "filters" | "other";
+            /** @enum {string} */
+            schedule_mode: "once" | "from_last_completion" | "fixed_grid";
+            interval_months?: number | null;
+            interval_km?: number | null;
+            /** @description nur bei bestimmter Ausstattung (z. B. Automatikgetriebe) */
+            optional?: boolean;
+        };
+        MaintenanceTemplate: {
+            id: string;
+            title: string;
+            description?: string;
+            applies_to?: string;
+            body_types?: string[];
+            energy_carriers?: string[];
+            /** @description Hinweis zur Herkunft der Richtwerte */
+            note?: string;
+            items: components["schemas"]["MaintenanceTemplateItem"][];
+        };
+        MaintenanceTemplatePage: {
+            items: components["schemas"]["MaintenanceTemplate"][];
             next_cursor: string | null;
         };
         CostItem: {
@@ -6623,6 +6671,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listMaintenanceTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceTemplatePage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
         };
     };
