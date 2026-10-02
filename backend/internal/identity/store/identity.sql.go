@@ -102,6 +102,17 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 	return i, err
 }
 
+const getInstallationSettings = `-- name: GetInstallationSettings :one
+SELECT settings FROM identity.installation_settings WHERE id
+`
+
+func (q *Queries) GetInstallationSettings(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getInstallationSettings)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
+}
+
 const getRole = `-- name: GetRole :one
 SELECT role FROM identity.vehicle_membership WHERE vehicle_id = $1 AND account_id = $2
 `
@@ -283,6 +294,20 @@ func (q *Queries) MarkLogin(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const revokeOtherSessions = `-- name: RevokeOtherSessions :exec
+UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL
+`
+
+type RevokeOtherSessionsParams struct {
+	AccountID pgtype.UUID
+	ID        pgtype.UUID
+}
+
+func (q *Queries) RevokeOtherSessions(ctx context.Context, arg RevokeOtherSessionsParams) error {
+	_, err := q.db.Exec(ctx, revokeOtherSessions, arg.AccountID, arg.ID)
+	return err
+}
+
 const revokeOwnSession = `-- name: RevokeOwnSession :execrows
 UPDATE identity.session SET revoked_at = now() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL
 `
@@ -379,4 +404,32 @@ func (q *Queries) UpdateAccountSettings(ctx context.Context, arg UpdateAccountSe
 		&i.Version,
 	)
 	return i, err
+}
+
+const updateInstallationSettings = `-- name: UpdateInstallationSettings :exec
+UPDATE identity.installation_settings SET settings = $1, updated_by = $2, updated_at = now(), version = version + 1 WHERE id
+`
+
+type UpdateInstallationSettingsParams struct {
+	Settings  []byte
+	UpdatedBy pgtype.UUID
+}
+
+func (q *Queries) UpdateInstallationSettings(ctx context.Context, arg UpdateInstallationSettingsParams) error {
+	_, err := q.db.Exec(ctx, updateInstallationSettings, arg.Settings, arg.UpdatedBy)
+	return err
+}
+
+const updatePasswordHash = `-- name: UpdatePasswordHash :exec
+UPDATE identity.account SET password_hash = $2, updated_at = now(), version = version + 1 WHERE id = $1
+`
+
+type UpdatePasswordHashParams struct {
+	ID           pgtype.UUID
+	PasswordHash pgtype.Text
+}
+
+func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
+	_, err := q.db.Exec(ctx, updatePasswordHash, arg.ID, arg.PasswordHash)
+	return err
 }

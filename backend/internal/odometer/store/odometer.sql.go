@@ -22,6 +22,47 @@ func (q *Queries) CountReadings(ctx context.Context, vehicleID pgtype.UUID) (int
 	return count, err
 }
 
+const getOwnedReading = `-- name: GetOwnedReading :one
+SELECT id, vehicle_id, occurred_at, time_zone, time_precision, value, input_value, input_unit, source, source_ref, status, confirmed_anomalies, supersedes_id, photo_file_id, note, origin, created_at, created_by, recorded_at, deleted_at, version FROM odometer.reading
+WHERE vehicle_id = $1 AND source = $2 AND source_ref = $3 AND deleted_at IS NULL AND status <> 'superseded'
+ORDER BY recorded_at DESC LIMIT 1
+`
+
+type GetOwnedReadingParams struct {
+	VehicleID pgtype.UUID
+	Source    string
+	SourceRef pgtype.UUID
+}
+
+func (q *Queries) GetOwnedReading(ctx context.Context, arg GetOwnedReadingParams) (OdometerReading, error) {
+	row := q.db.QueryRow(ctx, getOwnedReading, arg.VehicleID, arg.Source, arg.SourceRef)
+	var i OdometerReading
+	err := row.Scan(
+		&i.ID,
+		&i.VehicleID,
+		&i.OccurredAt,
+		&i.TimeZone,
+		&i.TimePrecision,
+		&i.Value,
+		&i.InputValue,
+		&i.InputUnit,
+		&i.Source,
+		&i.SourceRef,
+		&i.Status,
+		&i.ConfirmedAnomalies,
+		&i.SupersedesID,
+		&i.PhotoFileID,
+		&i.Note,
+		&i.Origin,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.RecordedAt,
+		&i.DeletedAt,
+		&i.Version,
+	)
+	return i, err
+}
+
 const getReading = `-- name: GetReading :one
 SELECT id, vehicle_id, occurred_at, time_zone, time_precision, value, input_value, input_unit, source, source_ref, status, confirmed_anomalies, supersedes_id, photo_file_id, note, origin, created_at, created_by, recorded_at, deleted_at, version FROM odometer.reading WHERE id = $1 AND deleted_at IS NULL
 `

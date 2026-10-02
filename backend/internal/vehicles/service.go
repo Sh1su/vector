@@ -29,6 +29,24 @@ type Meta struct {
 	Status           string
 	SaleDate         *time.Time
 	DisplayName      string
+	EnergyCarriers   []string
+	DefaultCurrency  string
+	// Kanonische Kapazitäten aus den Stammdaten; 0 = unbekannt.
+	TankCapacityMl   map[string]int64
+	BatteryWh        int64
+	OilRangeMl       int64
+	OilCapacityMl    int64
+}
+
+func canonicalOf(q *Q) int64 {
+	if q == nil {
+		return 0
+	}
+	c, err := kernel.ToCanonical(q.Value, q.Unit)
+	if err != nil {
+		return 0
+	}
+	return c.Canonical
 }
 
 // Service ist der Application Service des Moduls Vehicles.
@@ -506,7 +524,15 @@ func LoadMeta(ctx context.Context, db store.DBTX, id uuid.UUID, lock bool) (Meta
 	if err != nil {
 		return Meta{}, err
 	}
-	m := Meta{ID: id, UsageMeter: v.UsageMeter, OdometerRequired: v.OdometerRequired, OwnerTimeZone: v.OwnerTimeZone, Status: v.Status, DisplayName: v.DisplayName}
+	m := Meta{ID: id, UsageMeter: v.UsageMeter, OdometerRequired: v.OdometerRequired, OwnerTimeZone: v.OwnerTimeZone, Status: v.Status,
+		DisplayName: v.DisplayName, EnergyCarriers: v.EnergyCarriers, DefaultCurrency: v.DefaultCurrency, TankCapacityMl: map[string]int64{}}
+	var ex extra
+	_ = json.Unmarshal(v.Extra, &ex)
+	for k, q := range ex.TankCapacity {
+		q := q
+		m.TankCapacityMl[k] = canonicalOf(&q)
+	}
+	m.BatteryWh, m.OilRangeMl, m.OilCapacityMl = canonicalOf(ex.BatteryUsableCapacity), canonicalOf(ex.OilDipstickRange), canonicalOf(ex.OilCapacity)
 	if v.SaleDate.Valid {
 		t := v.SaleDate.Time
 		m.SaleDate = &t

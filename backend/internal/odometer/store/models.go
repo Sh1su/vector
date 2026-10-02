@@ -8,6 +8,59 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AssistantConversation struct {
+	ID        pgtype.UUID
+	AccountID pgtype.UUID
+	VehicleID pgtype.UUID
+	Title     pgtype.Text
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type AssistantMessage struct {
+	ID             pgtype.UUID
+	ConversationID pgtype.UUID
+	Role           string
+	Text           string
+	Citations      []byte
+	CreatedAt      pgtype.Timestamptz
+}
+
+type AssistantProposal struct {
+	ID             pgtype.UUID
+	ConversationID pgtype.UUID
+	MessageID      pgtype.UUID
+	AccountID      pgtype.UUID
+	VehicleID      pgtype.UUID
+	Operation      string
+	Body           []byte
+	Anomalies      []byte
+	Status         string
+	ExpiresAt      pgtype.Timestamptz
+	ResultID       pgtype.UUID
+	CreatedAt      pgtype.Timestamptz
+	DecidedAt      pgtype.Timestamptz
+}
+
+type AssistantRequestLog struct {
+	ID           pgtype.UUID
+	AccountID    pgtype.UUID
+	OccurredAt   pgtype.Timestamptz
+	Provider     string
+	Model        string
+	InputTokens  int64
+	OutputTokens int64
+	Tools        []string
+	Outcome      string
+}
+
+type AssistantUserState struct {
+	AccountID       pgtype.UUID
+	Enabled         bool
+	ConsentProvider pgtype.Text
+	ConsentAt       pgtype.Timestamptz
+}
+
 type AuditEvent struct {
 	ID             pgtype.UUID
 	OccurredAt     pgtype.Timestamptz
@@ -20,6 +73,41 @@ type AuditEvent struct {
 	Changes        []byte
 	Reason         pgtype.Text
 	RequestID      pgtype.Text
+}
+
+type FuelFill struct {
+	ID                 pgtype.UUID
+	VehicleID          pgtype.UUID
+	OccurredAt         pgtype.Timestamptz
+	TimeZone           string
+	TimePrecision      string
+	EnergyCarrier      string
+	Quantity           int64
+	InputQuantity      pgtype.Numeric
+	InputUnit          string
+	FillLevel          string
+	PreviousMissed     bool
+	OdometerReadingID  pgtype.UUID
+	CostAmountMinor    pgtype.Int8
+	CostCurrency       pgtype.Text
+	InputPricePerUnit  pgtype.Numeric
+	InputPriceCurrency pgtype.Text
+	InputPriceUnit     pgtype.Text
+	SocStartPct        pgtype.Numeric
+	SocEndPct          pgtype.Numeric
+	ChargeType         pgtype.Text
+	Station            pgtype.Text
+	Note               string
+	Tags               []string
+	ConfirmedAnomalies []byte
+	Origin             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          pgtype.UUID
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          pgtype.UUID
+	RecordedAt         pgtype.Timestamptz
+	DeletedAt          pgtype.Timestamptz
+	Version            int32
 }
 
 type IdentityAccount struct {
@@ -35,6 +123,14 @@ type IdentityAccount struct {
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
 	Version       int32
+}
+
+type IdentityInstallationSetting struct {
+	ID        bool
+	Settings  []byte
+	UpdatedAt pgtype.Timestamptz
+	UpdatedBy pgtype.UUID
+	Version   int32
 }
 
 type IdentitySession struct {
@@ -56,6 +152,56 @@ type IdentityVehicleMembership struct {
 	AccountID pgtype.UUID
 	Role      string
 	CreatedAt pgtype.Timestamptz
+}
+
+type MaintenanceCompletion struct {
+	ID             pgtype.UUID
+	ItemID         pgtype.UUID
+	VehicleID      pgtype.UUID
+	Kind           string
+	CompletedOn    pgtype.Date
+	CompletedTotal pgtype.Int8
+	CompletedInput []byte
+	ServiceEntryID pgtype.UUID
+	Reason         pgtype.Text
+	IdempotencyKey pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      pgtype.UUID
+	DeletedAt      pgtype.Timestamptz
+}
+
+type MaintenanceItem struct {
+	ID                      pgtype.UUID
+	VehicleID               pgtype.UUID
+	Title                   string
+	Description             pgtype.Text
+	Category                string
+	ManufacturerRecommended bool
+	SourceDocumentID        pgtype.UUID
+	SourcePage              pgtype.Int4
+	ScheduleMode            string
+	IntervalMonths          pgtype.Int4
+	IntervalDays            pgtype.Int4
+	IntervalDistance        pgtype.Int8
+	AnchorDate              pgtype.Date
+	AnchorTotal             pgtype.Int8
+	DueDateOnce             pgtype.Date
+	DueTotalOnce            pgtype.Int8
+	UpcomingDays            pgtype.Int4
+	DueDays                 pgtype.Int4
+	UpcomingDistance        pgtype.Int8
+	DueDistance             pgtype.Int8
+	Inputs                  []byte
+	Active                  bool
+	Note                    string
+	Origin                  string
+	CreatedAt               pgtype.Timestamptz
+	CreatedBy               pgtype.UUID
+	UpdatedAt               pgtype.Timestamptz
+	UpdatedBy               pgtype.UUID
+	RecordedAt              pgtype.Timestamptz
+	DeletedAt               pgtype.Timestamptz
+	Version                 int32
 }
 
 type OdometerReading struct {
@@ -94,6 +240,42 @@ type OdometerSegment struct {
 	Note            string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       pgtype.UUID
+}
+
+type OilEntry struct {
+	ID                 pgtype.UUID
+	VehicleID          pgtype.UUID
+	Kind               string
+	OccurredAt         pgtype.Timestamptz
+	TimeZone           string
+	TimePrecision      string
+	OdometerReadingID  pgtype.UUID
+	LevelBeforePct     pgtype.Numeric
+	LevelBeforeInput   pgtype.Text
+	LevelAfterPct      pgtype.Numeric
+	LevelAfterInput    pgtype.Text
+	OilAddedMl         pgtype.Int8
+	InputAdded         pgtype.Numeric
+	InputAddedUnit     pgtype.Text
+	OilChangeFillMl    pgtype.Int8
+	InputFill          pgtype.Numeric
+	InputFillUnit      pgtype.Text
+	OilSpecification   pgtype.Text
+	OilBrand           pgtype.Text
+	OilProduct         pgtype.Text
+	FilterChanged      pgtype.Bool
+	ServiceEntryID     pgtype.UUID
+	Note               string
+	Tags               []string
+	ConfirmedAnomalies []byte
+	Origin             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          pgtype.UUID
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          pgtype.UUID
+	RecordedAt         pgtype.Timestamptz
+	DeletedAt          pgtype.Timestamptz
+	Version            int32
 }
 
 type VehiclesVehicle struct {

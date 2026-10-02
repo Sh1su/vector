@@ -37,6 +37,10 @@ type Reading struct {
 	RecordedAt time.Time
 	Value      int64 // Zählerwert, kanonisch (m bzw. s)
 	Status     string
+	Source     string
+	SourceRef  *uuid.UUID
+	InputValue float64 // Originaleingabe (ADR-007)
+	InputUnit  string
 }
 
 // Segment ist ein Zählerabschnitt. Abschnitt 1 beginnt implizit „immer“ (Start = Nullzeit).

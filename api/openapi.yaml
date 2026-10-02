@@ -9,7 +9,7 @@ info:
 
     **Erweiterungen:** `x-vectra-role` = mindestens nötige Rolle am Fahrzeug (`viewer`, `editor`, `editor-delete`, `owner`, `owner-delete`) bzw. `self`/`admin`/`public`; `x-vectra-scope` = nötiger API-Token-Scope. Die CI verweigert Operationen ohne diese Angaben (deny-by-default).
 
-    **Assistant-Endpunkte** existieren nur, wenn der Assistent aktiviert ist; sonst `404` (ADR-024).
+    **Assistant-Endpunkte** existieren nur, wenn der Assistent aktiviert ist; sonst `404` (ADR-024). Ausnahme: `GET /assistant/status` antwortet immer (mit `enabled: false`), damit Clients den Zustand anzeigen können.
   license:
     name: Proprietär – Lizenz wird vor Veröffentlichung festgelegt
     identifier: LicenseRef-Vectra-TBD
@@ -3188,6 +3188,30 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: self
+      x-vectra-scope: vehicles:read
+  /maintenance-templates:
+    get:
+      operationId: listMaintenanceTemplates
+      summary: Vorlagen für Wartungspläne (OP-MA-1)
+      description: Eingebaute Richtwerte, z. B. für Mercedes-Benz CDI-Transporter. Der Client übernimmt ausgewählte Positionen
+        mit eigenen Intervallen und Ankern über `createMaintenanceItem`.
+      tags:
+      - Maintenance
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTemplatePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
       security:
@@ -9516,6 +9540,91 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DueStatus'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+    MaintenanceTemplateItem:
+      type: object
+      properties:
+        key:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum:
+          - service
+          - legal_inspection
+          - tires
+          - fluids
+          - brakes
+          - filters
+          - other
+        schedule_mode:
+          type: string
+          enum:
+          - once
+          - from_last_completion
+          - fixed_grid
+        interval_months:
+          type:
+          - integer
+          - 'null'
+        interval_km:
+          type:
+          - integer
+          - 'null'
+        optional:
+          type: boolean
+          description: nur bei bestimmter Ausstattung (z. B. Automatikgetriebe)
+      required:
+      - key
+      - title
+      - category
+      - schedule_mode
+    MaintenanceTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        applies_to:
+          type: string
+        body_types:
+          type: array
+          items:
+            type: string
+        energy_carriers:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+          description: Hinweis zur Herkunft der Richtwerte
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceTemplateItem'
+      required:
+      - id
+      - title
+      - items
+    MaintenanceTemplatePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceTemplate'
         next_cursor:
           type:
           - string

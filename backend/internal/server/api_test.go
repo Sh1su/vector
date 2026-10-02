@@ -19,10 +19,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gopkg.in/yaml.v3"
 
+	"github.com/sh1su/vector/backend/internal/assistant"
+	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
 	istore "github.com/sh1su/vector/backend/internal/identity/store"
 	"github.com/sh1su/vector/backend/internal/kernel"
+	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
+	"github.com/sh1su/vector/backend/internal/oil"
 	"github.com/sh1su/vector/backend/internal/platform/db"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 	vstore "github.com/sh1su/vector/backend/internal/vehicles/store"
@@ -37,6 +41,7 @@ type env struct {
 	t    *testing.T
 	srv  *httptest.Server
 	pool *pgxpool.Pool
+	chat *fakeChat
 }
 
 func newEnv(t *testing.T) *env {
@@ -52,7 +57,10 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE assistant.request_log, assistant.proposal, assistant.message, assistant.conversation, assistant.user_state, audit.event, maintenance.completion, maintenance.item, fuel.fill, oil.entry, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE identity.installation_settings SET settings = '{}'`); err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -62,9 +70,23 @@ func newEnv(t *testing.T) *env {
 	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) { return odometer.HasReadings(ctx, q, id) }
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: 250})
 	odo.Now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
-	srv := httptest.NewServer(Handler(Deps{Identity: ids, Vehicles: veh, Odometer: odo, Log: log, CookieSecure: false}))
+	fu := fuel.NewService(pool, odo)
+	fu.Now = odo.Now
+	oi := oil.NewService(pool, odo)
+	oi.Now = odo.Now
+	ma := maintenance.NewService(pool, odo)
+	ma.Now = odo.Now
+	ma.UserSettings = ids.Settings
+	ma.InstallSettings = ids.Installation
+	chat := &fakeChat{}
+	as := assistant.NewService(pool, assistant.Deps{Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma,
+		Units: func(ctx context.Context, id uuid.UUID) kernel.Units { st, _ := ids.Settings(ctx, id); return kernel.UnitsFromSettings(st) }},
+		chat, assistant.Config{Provider: "fake", Name: "Testanbieter", Model: "fake-1", External: true, DailyLimit: 5, RetentionDays: 30}, log)
+	as.Installation = ids.Installation
+	as.Now = odo.Now
+	srv := httptest.NewServer(Handler(Deps{Assistant: as, Identity: ids, Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma, Log: log, CookieSecure: false, OdometerVMaxKmh: 250}))
 	t.Cleanup(func() { srv.Close(); pool.Close() })
-	return &env{t: t, srv: srv, pool: pool}
+	return &env{t: t, srv: srv, pool: pool, chat: chat}
 }
 
 type client struct {
@@ -399,7 +421,7 @@ func TestAuthorizationAcrossVehicles(t *testing.T) {
 func TestNotImplementedIs501(t *testing.T) {
 	e := newEnv(t)
 	c := e.adminClient()
-	r := c.do("GET", "/me/due", nil)
+	r := c.do("GET", "/me/api-tokens", nil)
 	expect(t, r, 501, "not implemented")
 	if r.header.Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("content type %s", r.header.Get("Content-Type"))

@@ -55,3 +55,15 @@ INSERT INTO identity.vehicle_membership (vehicle_id, account_id, role) VALUES ($
 
 -- name: ListMemberVehicleIDs :many
 SELECT vehicle_id, role FROM identity.vehicle_membership WHERE account_id = $1;
+
+-- name: UpdatePasswordHash :exec
+UPDATE identity.account SET password_hash = $2, updated_at = now(), version = version + 1 WHERE id = $1;
+
+-- name: RevokeOtherSessions :exec
+UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL;
+
+-- name: GetInstallationSettings :one
+SELECT settings FROM identity.installation_settings WHERE id;
+
+-- name: UpdateInstallationSettings :exec
+UPDATE identity.installation_settings SET settings = $1, updated_by = $2, updated_at = now(), version = version + 1 WHERE id;

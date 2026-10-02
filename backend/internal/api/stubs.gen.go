@@ -457,6 +457,10 @@ func (NotImplemented) ListMaintenanceItems(context.Context, ListMaintenanceItems
 	return nil, ErrNotImplemented
 }
 
+func (NotImplemented) ListMaintenanceTemplates(context.Context, ListMaintenanceTemplatesRequestObject) (ListMaintenanceTemplatesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 func (NotImplemented) ListMembers(context.Context, ListMembersRequestObject) (ListMembersResponseObject, error) {
 	return nil, ErrNotImplemented
 }

@@ -220,6 +220,9 @@ func (s *Service) PatchSettings(ctx context.Context, id uuid.UUID, patch map[str
 		return nil, err
 	}
 	mergePatch(cur, patch)
+	if err := validateSettings(cur); err != nil {
+		return nil, err
+	}
 	b, _ := json.Marshal(cur)
 	if _, err := store.New(s.pool).UpdateAccountSettings(ctx, store.UpdateAccountSettingsParams{ID: pgUUID(id), Settings: b}); err != nil {
 		return nil, err

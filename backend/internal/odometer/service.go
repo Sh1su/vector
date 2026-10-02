@@ -16,6 +16,7 @@ import (
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/odometer/store"
 	"github.com/sh1su/vector/backend/internal/platform/audit"
+	"github.com/sh1su/vector/backend/internal/platform/db"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 )
@@ -109,8 +110,10 @@ func canonicalUnit(meter string) string {
 }
 
 func toReading(r store.OdometerReading) Reading {
+	iv, _ := r.InputValue.Float64Value()
 	return Reading{ID: uuid.UUID(r.ID.Bytes), At: r.OccurredAt.Time, TimeZone: r.TimeZone, Precision: r.TimePrecision,
-		RecordedAt: r.RecordedAt.Time, Value: r.Value, Status: r.Status}
+		RecordedAt: r.RecordedAt.Time, Value: r.Value, Status: r.Status, Source: r.Source, SourceRef: uptr(r.SourceRef),
+		InputValue: iv.Float64, InputUnit: r.InputUnit}
 }
 
 func (s *Service) view(r store.OdometerReading, segs Segments, meter string, successor *uuid.UUID) View {
@@ -228,7 +231,7 @@ func numeric(dec string) pgtype.Numeric {
 func (s *Service) Create(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, in Input, source string, sourceRef *uuid.UUID) (View, bool, error) {
 	var out View
 	created := true
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := identity.Authorize(ctx, tx, actor, vehicleID, identity.RoleEditor); err != nil {
 			return err
 		}
@@ -289,9 +292,15 @@ func (s *Service) Create(ctx context.Context, actor kernel.Actor, vehicleID uuid
 	return out, created, err
 }
 
-func originOf(a kernel.Actor) string {
-	if a.Kind == "api_token" {
+func originOf(a kernel.Actor) string { return OriginOf(a) }
+
+// OriginOf bildet den Akteur auf die Herkunft eines Datensatzes ab.
+func OriginOf(a kernel.Actor) string {
+	switch a.Kind {
+	case "api_token":
 		return "api"
+	case "assistant":
+		return "assistant"
 	}
 	return "web"
 }

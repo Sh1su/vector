@@ -1295,6 +1295,60 @@ func (e MaintenanceItemPatchScheduleMode) Valid() bool {
 	}
 }
 
+// Defines values for MaintenanceTemplateItemCategory.
+const (
+	MaintenanceTemplateItemCategoryBrakes          MaintenanceTemplateItemCategory = "brakes"
+	MaintenanceTemplateItemCategoryFilters         MaintenanceTemplateItemCategory = "filters"
+	MaintenanceTemplateItemCategoryFluids          MaintenanceTemplateItemCategory = "fluids"
+	MaintenanceTemplateItemCategoryLegalInspection MaintenanceTemplateItemCategory = "legal_inspection"
+	MaintenanceTemplateItemCategoryOther           MaintenanceTemplateItemCategory = "other"
+	MaintenanceTemplateItemCategoryService         MaintenanceTemplateItemCategory = "service"
+	MaintenanceTemplateItemCategoryTires           MaintenanceTemplateItemCategory = "tires"
+)
+
+// Valid indicates whether the value is a known member of the MaintenanceTemplateItemCategory enum.
+func (e MaintenanceTemplateItemCategory) Valid() bool {
+	switch e {
+	case MaintenanceTemplateItemCategoryBrakes:
+		return true
+	case MaintenanceTemplateItemCategoryFilters:
+		return true
+	case MaintenanceTemplateItemCategoryFluids:
+		return true
+	case MaintenanceTemplateItemCategoryLegalInspection:
+		return true
+	case MaintenanceTemplateItemCategoryOther:
+		return true
+	case MaintenanceTemplateItemCategoryService:
+		return true
+	case MaintenanceTemplateItemCategoryTires:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaintenanceTemplateItemScheduleMode.
+const (
+	MaintenanceTemplateItemScheduleModeFixedGrid          MaintenanceTemplateItemScheduleMode = "fixed_grid"
+	MaintenanceTemplateItemScheduleModeFromLastCompletion MaintenanceTemplateItemScheduleMode = "from_last_completion"
+	MaintenanceTemplateItemScheduleModeOnce               MaintenanceTemplateItemScheduleMode = "once"
+)
+
+// Valid indicates whether the value is a known member of the MaintenanceTemplateItemScheduleMode enum.
+func (e MaintenanceTemplateItemScheduleMode) Valid() bool {
+	switch e {
+	case MaintenanceTemplateItemScheduleModeFixedGrid:
+		return true
+	case MaintenanceTemplateItemScheduleModeFromLastCompletion:
+		return true
+	case MaintenanceTemplateItemScheduleModeOnce:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NotificationEventType.
 const (
 	AccountSecurity     NotificationEventType = "account.security"
@@ -3734,6 +3788,46 @@ type MaintenanceItemPatchCategory string
 // MaintenanceItemPatchScheduleMode defines model for MaintenanceItemPatch.ScheduleMode.
 type MaintenanceItemPatchScheduleMode string
 
+// MaintenanceTemplate defines model for MaintenanceTemplate.
+type MaintenanceTemplate struct {
+	AppliesTo      *string                   `json:"applies_to,omitempty"`
+	BodyTypes      *[]string                 `json:"body_types,omitempty"`
+	Description    *string                   `json:"description,omitempty"`
+	EnergyCarriers *[]string                 `json:"energy_carriers,omitempty"`
+	Id             string                    `json:"id"`
+	Items          []MaintenanceTemplateItem `json:"items"`
+
+	// Note Hinweis zur Herkunft der Richtwerte
+	Note  *string `json:"note,omitempty"`
+	Title string  `json:"title"`
+}
+
+// MaintenanceTemplateItem defines model for MaintenanceTemplateItem.
+type MaintenanceTemplateItem struct {
+	Category       MaintenanceTemplateItemCategory `json:"category"`
+	Description    *string                         `json:"description,omitempty"`
+	IntervalKm     nullable.Nullable[int]          `json:"interval_km,omitempty"`
+	IntervalMonths nullable.Nullable[int]          `json:"interval_months,omitempty"`
+	Key            string                          `json:"key"`
+
+	// Optional nur bei bestimmter Ausstattung (z. B. Automatikgetriebe)
+	Optional     *bool                               `json:"optional,omitempty"`
+	ScheduleMode MaintenanceTemplateItemScheduleMode `json:"schedule_mode"`
+	Title        string                              `json:"title"`
+}
+
+// MaintenanceTemplateItemCategory defines model for MaintenanceTemplateItem.Category.
+type MaintenanceTemplateItemCategory string
+
+// MaintenanceTemplateItemScheduleMode defines model for MaintenanceTemplateItem.ScheduleMode.
+type MaintenanceTemplateItemScheduleMode string
+
+// MaintenanceTemplatePage defines model for MaintenanceTemplatePage.
+type MaintenanceTemplatePage struct {
+	Items      []MaintenanceTemplate     `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
 // MaintenanceThresholds MA-05; leer = Vorgabe
 type MaintenanceThresholds struct {
 	DueDays          nullable.Nullable[int]           `json:"due_days,omitempty"`
@@ -5933,6 +6027,9 @@ type ServerInterface interface {
 	// DeclineInvitation Einladung ablehnen
 	// (POST /invitations/decline)
 	DeclineInvitation(w http.ResponseWriter, r *http.Request)
+	// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
+	// (GET /maintenance-templates)
+	ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request)
 	// DeleteMe Eigenes Konto löschen (ID-05)
 	// (DELETE /me)
 	DeleteMe(w http.ResponseWriter, r *http.Request)
@@ -6524,6 +6621,12 @@ func (_ Unimplemented) AcceptInvitation(w http.ResponseWriter, r *http.Request) 
 // DeclineInvitation Einladung ablehnen
 // (POST /invitations/decline)
 func (_ Unimplemented) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
+// (GET /maintenance-templates)
+func (_ Unimplemented) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8088,6 +8191,20 @@ func (siw *ServerInterfaceWrapper) DeclineInvitation(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeclineInvitation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMaintenanceTemplates operation middleware
+func (siw *ServerInterfaceWrapper) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMaintenanceTemplates(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14066,6 +14183,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/me/due", wrapper.GetDueFeed)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/maintenance-templates", wrapper.ListMaintenanceTemplates)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/vehicles/{vehicle_id}/service-entries", wrapper.ListServiceEntrys)
 	})
 	r.Group(func(r chi.Router) {
@@ -17832,6 +17952,62 @@ type DeclineInvitation429ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeclineInvitation429ApplicationProblemPlusJSONResponse) VisitDeclineInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaintenanceTemplatesRequestObject struct {
+}
+
+type ListMaintenanceTemplatesResponseObject interface {
+	VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error
+}
+
+type ListMaintenanceTemplates200JSONResponse MaintenanceTemplatePage
+
+func (response ListMaintenanceTemplates200JSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaintenanceTemplates401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListMaintenanceTemplates401ApplicationProblemPlusJSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaintenanceTemplates429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ListMaintenanceTemplates429ApplicationProblemPlusJSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -33921,6 +34097,9 @@ type StrictServerInterface interface {
 	// DeclineInvitation Einladung ablehnen
 	// (POST /invitations/decline)
 	DeclineInvitation(ctx context.Context, request DeclineInvitationRequestObject) (DeclineInvitationResponseObject, error)
+	// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
+	// (GET /maintenance-templates)
+	ListMaintenanceTemplates(ctx context.Context, request ListMaintenanceTemplatesRequestObject) (ListMaintenanceTemplatesResponseObject, error)
 	// DeleteMe Eigenes Konto löschen (ID-05)
 	// (DELETE /me)
 	DeleteMe(ctx context.Context, request DeleteMeRequestObject) (DeleteMeResponseObject, error)
@@ -35304,6 +35483,30 @@ func (sh *strictHandler) DeclineInvitation(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeclineInvitationResponseObject); ok {
 		if err := validResponse.VisitDeclineInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMaintenanceTemplates operation middleware
+func (sh *strictHandler) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
+	var request ListMaintenanceTemplatesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMaintenanceTemplates(ctx, request.(ListMaintenanceTemplatesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMaintenanceTemplates")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMaintenanceTemplatesResponseObject); ok {
+		if err := validResponse.VisitListMaintenanceTemplatesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

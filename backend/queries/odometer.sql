@@ -43,3 +43,8 @@ LIMIT sqlc.arg(lim);
 
 -- name: GetSuccessor :one
 SELECT id FROM odometer.reading WHERE supersedes_id = $1 AND deleted_at IS NULL;
+
+-- name: GetOwnedReading :one
+SELECT * FROM odometer.reading
+WHERE vehicle_id = $1 AND source = $2 AND source_ref = $3 AND deleted_at IS NULL AND status <> 'superseded'
+ORDER BY recorded_at DESC LIMIT 1;

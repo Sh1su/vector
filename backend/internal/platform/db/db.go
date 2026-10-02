@@ -3,6 +3,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -11,6 +12,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
+	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/migrations"
 )
 
@@ -43,7 +45,22 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// InTx führt fn in genau einer Transaktion aus (Unit of Work, ADR-004).
+var errDryRun = errors.New("dry run")
+
+// InTx führt fn in genau einer Transaktion aus (Unit of Work, ADR-004). Bei
+// einem Probelauf (kernel.WithDryRun) wird nach Erfolg zurückgerollt.
 func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
-	return pgx.BeginFunc(ctx, pool, fn)
+	if !kernel.IsDryRun(ctx) {
+		return pgx.BeginFunc(ctx, pool, fn)
+	}
+	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return errDryRun
+	})
+	if errors.Is(err, errDryRun) {
+		return nil
+	}
+	return err
 }

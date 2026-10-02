@@ -14,8 +14,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sh1su/vector/backend/internal/api"
+	"github.com/sh1su/vector/backend/internal/assistant"
+	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
+	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
+	"github.com/sh1su/vector/backend/internal/oil"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 )
@@ -25,10 +29,16 @@ type Deps struct {
 	Identity     *identity.Service
 	Vehicles     *vehicles.Service
 	Odometer     *odometer.Service
+	Fuel         *fuel.Service
+	Oil          *oil.Service
+	Maintenance  *maintenance.Service
+	Assistant    *assistant.Service
 	Log          *slog.Logger
 	CookieSecure bool
-	WebDir       string
-	Ping         func(r *http.Request) error
+	// OdometerVMaxKmh wird in den Installationseinstellungen angezeigt.
+	OdometerVMaxKmh int
+	WebDir          string
+	Ping            func(r *http.Request) error
 }
 
 // Server implementiert api.StrictServerInterface. Nicht umgesetzte Operationen
