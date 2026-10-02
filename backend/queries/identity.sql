@@ -67,3 +67,21 @@ SELECT settings FROM identity.installation_settings WHERE id;
 
 -- name: UpdateInstallationSettings :exec
 UPDATE identity.installation_settings SET settings = $1, updated_by = $2, updated_at = now(), version = version + 1 WHERE id;
+
+-- name: InsertApiToken :one
+INSERT INTO identity.api_token (id, account_id, name, token_hash, prefix, scopes, vehicle_ids, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
+
+-- name: ListApiTokens :many
+SELECT * FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC;
+
+-- name: RevokeApiToken :execrows
+UPDATE identity.api_token SET revoked_at = now() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL;
+
+-- name: GetActiveApiToken :one
+SELECT t.* FROM identity.api_token t
+JOIN identity.account a ON a.id = t.account_id
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND a.status = 'active';
+
+-- name: TouchApiToken :exec
+UPDATE identity.api_token SET last_used_at = now() WHERE id = $1;

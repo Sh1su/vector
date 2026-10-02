@@ -10,16 +10,24 @@ Die CI veröffentlicht bei jedem Push ein Image für amd64 und arm64 unter `ghcr
 | `sha-<commit>` | genau dieser Commit |
 | `1.2.3` | Release-Tag `v1.2.3` |
 
+**Am einfachsten mit dem Installationsskript** (erzeugt `.env`, `compose.yaml` und ggf. `Caddyfile`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sh1su/vector/main/deploy/install.sh | bash
+cd vectra && docker compose up -d
+```
+
+Manuell:
+
 ```bash
 mkdir vectra && cd vectra
 # compose.yaml, Caddyfile und .env.example aus deploy/ auf den Server kopieren
 cp .env.example .env    # Domain und Datenbankpasswort eintragen
 docker compose pull
 docker compose up -d
-docker compose logs vectra | grep setup_token   # Einmal-Token für die Ersteinrichtung
 ```
 
-Danach `https://<VECTRA_DOMAIN>/einrichtung` öffnen und das erste Administratorkonto anlegen. Aktualisieren: `docker compose pull && docker compose up -d`.
+Danach `https://<VECTRA_DOMAIN>` öffnen: Solange noch kein Konto existiert, leitet Vectra automatisch zur Ersteinrichtung des Administratorkontos. Ist `VECTRA_SETUP_TOKEN` gesetzt, wird dieses Token abgefragt (für Server im Internet empfohlen); ohne Token darf die erste Person die Einrichtung durchführen. Sobald ein Konto existiert, ist die Ersteinrichtung gesperrt. Aktualisieren: `docker compose pull && docker compose up -d`.
 
 **Sichtbarkeit des Pakets:** Neue Pakete auf ghcr.io sind privat. Entweder das Paket unter GitHub → Profil → Packages → `vector` → Package settings auf *Public* stellen, oder auf dem Server anmelden: `echo <TOKEN> | docker login ghcr.io -u <github-name> --password-stdin` (Personal Access Token mit `read:packages`).
 

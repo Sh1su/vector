@@ -51,3 +51,11 @@ WHERE vin = $1 AND id <> $2 AND id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at I
 -- name: InsertAudit :exec
 INSERT INTO audit.event (id, actor_account_id, actor_kind, action, vehicle_id, object_type, object_id, changes, reason, request_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+
+-- name: ListAuditEvents :many
+SELECT * FROM audit.event
+WHERE vehicle_id = sqlc.arg(vehicle_id)
+  AND (sqlc.narg(object_id)::uuid IS NULL OR object_id = sqlc.narg(object_id)::uuid)
+  AND (sqlc.narg(before_ts)::timestamptz IS NULL OR (occurred_at, id) < (sqlc.narg(before_ts)::timestamptz, sqlc.narg(before_id)::uuid))
+ORDER BY occurred_at DESC, id DESC
+LIMIT sqlc.arg(lim);

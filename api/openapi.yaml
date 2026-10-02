@@ -59,12 +59,30 @@ security:
 - bearerToken: []
 paths:
   /auth/setup:
+    get:
+      operationId: getSetupStatus
+      summary: Ist die Ersteinrichtung noch offen?
+      tags:
+      - Identity
+      description: '`setup_required` ist `true`, solange noch kein Konto existiert. Clients leiten dann auf die Ersteinrichtung.'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupStatus'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+      x-vectra-role: public
     post:
       operationId: setupInstallation
       summary: 'Ersteinrichtung: erstes Admin-Konto anlegen'
       tags:
       - Identity
-      description: Nur mit Einmal-Setup-Token und nur solange kein Konto existiert (ADR-015).
+      description: Nur solange noch kein Konto existiert (ADR-015). Ist `VECTRA_SETUP_TOKEN` gesetzt, ist zusätzlich dieses Token
+        nötig; sonst darf die erste Person, die die Installation öffnet, das Administratorkonto anlegen.
       requestBody:
         required: true
         content:
@@ -6784,6 +6802,7 @@ components:
         setup_token:
           type: string
           writeOnly: true
+          description: nur nötig, wenn VECTRA_SETUP_TOKEN gesetzt ist
         email:
           type: string
           format: email
@@ -6795,10 +6814,21 @@ components:
           writeOnly: true
           minLength: 12
       required:
-      - setup_token
       - email
       - display_name
       - password
+    SetupStatus:
+      type: object
+      properties:
+        setup_required:
+          type: boolean
+          description: noch kein Konto vorhanden
+        token_required:
+          type: boolean
+          description: VECTRA_SETUP_TOKEN ist gesetzt
+      required:
+      - setup_required
+      - token_required
     PasswordResetRequest:
       type: object
       properties:
@@ -11068,12 +11098,9 @@ components:
           format: uuid
         changes:
           type: object
+          description: Geänderte Werte; Form je Aktion (z. B. `{"value":{"old":…,"new":…}}`)
           properties: {}
-          additionalProperties:
-            type: object
-            properties:
-              old: {}
-              new: {}
+          additionalProperties: true
         reason:
           type:
           - string

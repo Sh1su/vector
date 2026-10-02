@@ -261,6 +261,61 @@ func (q *Queries) InsertVehicle(ctx context.Context, arg InsertVehicleParams) (V
 	return i, err
 }
 
+const listAuditEvents = `-- name: ListAuditEvents :many
+SELECT id, occurred_at, actor_account_id, actor_kind, action, vehicle_id, object_type, object_id, changes, reason, request_id FROM audit.event
+WHERE vehicle_id = $1
+  AND ($2::uuid IS NULL OR object_id = $2::uuid)
+  AND ($3::timestamptz IS NULL OR (occurred_at, id) < ($3::timestamptz, $4::uuid))
+ORDER BY occurred_at DESC, id DESC
+LIMIT $5
+`
+
+type ListAuditEventsParams struct {
+	VehicleID pgtype.UUID
+	ObjectID  pgtype.UUID
+	BeforeTs  pgtype.Timestamptz
+	BeforeID  pgtype.UUID
+	Lim       int32
+}
+
+func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, listAuditEvents,
+		arg.VehicleID,
+		arg.ObjectID,
+		arg.BeforeTs,
+		arg.BeforeID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditEvent
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorAccountID,
+			&i.ActorKind,
+			&i.Action,
+			&i.VehicleID,
+			&i.ObjectType,
+			&i.ObjectID,
+			&i.Changes,
+			&i.Reason,
+			&i.RequestID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVehicles = `-- name: ListVehicles :many
 SELECT id, display_name, vin, license_plate, plate_country, make, model, variant, model_year, first_registration, body_type, engine_code, displacement_ccm, power_kw, transmission, usage_meter, energy_carriers, odometer_required, owner_time_zone, default_currency, status, purchase_date, purchase_amount, purchase_currency, sale_date, sale_amount, sale_currency, note, tags, extra, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM vehicles.vehicle
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL

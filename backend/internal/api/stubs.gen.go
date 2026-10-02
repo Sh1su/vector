@@ -369,6 +369,10 @@ func (NotImplemented) GetSettings(context.Context, GetSettingsRequestObject) (Ge
 	return nil, ErrNotImplemented
 }
 
+func (NotImplemented) GetSetupStatus(context.Context, GetSetupStatusRequestObject) (GetSetupStatusResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 func (NotImplemented) GetTrip(context.Context, GetTripRequestObject) (GetTripResponseObject, error) {
 	return nil, ErrNotImplemented
 }

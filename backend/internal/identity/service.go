@@ -51,18 +51,26 @@ func NewService(pool *pgxpool.Pool, setupToken string, log *slog.Logger) *Servic
 	return &Service{pool: pool, setupToken: setupToken, log: log, throttle: newThrottle()}
 }
 
-// PrepareSetup erzeugt ein Einmal-Setup-Token, falls noch kein Konto existiert
-// und keines konfiguriert ist, und schreibt es ins Log (ADR-015).
+// PrepareSetup meldet im Log, dass die Ersteinrichtung offen ist (ADR-015).
+// Ein Setup-Token ist nur nötig, wenn VECTRA_SETUP_TOKEN gesetzt ist.
 func (s *Service) PrepareSetup(ctx context.Context) error {
 	n, err := store.New(s.pool).CountAccounts(ctx)
 	if err != nil || n > 0 {
 		return err
 	}
 	if s.setupToken == "" {
-		s.setupToken = randomToken(18)
+		s.log.Warn("Ersteinrichtung offen: Die erste Person, die /einrichtung aufruft, legt das Administratorkonto an. " +
+			"Zum Absichern VECTRA_SETUP_TOKEN setzen.")
+	} else {
+		s.log.Warn("Ersteinrichtung offen: /einrichtung mit dem Token aus VECTRA_SETUP_TOKEN aufrufen.")
 	}
-	s.log.Warn("Ersteinrichtung: noch kein Konto vorhanden. Setup-Token für POST /api/v1/auth/setup", "setup_token", s.setupToken)
 	return nil
+}
+
+// SetupStatus meldet, ob die Ersteinrichtung noch offen ist und ein Token braucht.
+func (s *Service) SetupStatus(ctx context.Context) (required, tokenRequired bool, err error) {
+	n, err := store.New(s.pool).CountAccounts(ctx)
+	return n == 0, s.setupToken != "", err
 }
 
 func toAccount(a store.IdentityAccount) Account {
@@ -73,7 +81,7 @@ func toAccount(a store.IdentityAccount) Account {
 // nur solange kein Konto existiert.
 func (s *Service) Setup(ctx context.Context, token, email, name, password string) (Account, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	if s.setupToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.setupToken)) != 1 {
+	if s.setupToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.setupToken)) != 1 {
 		return Account{}, problem.Forbidden("Setup-Token ungültig.")
 	}
 	if err := CheckPasswordPolicy(password); err != nil {
@@ -105,9 +113,6 @@ func (s *Service) Setup(ctx context.Context, token, email, name, password string
 		acc = toAccount(a)
 		return err
 	})
-	if err == nil {
-		s.setupToken = ""
-	}
 	return acc, err
 }
 

@@ -11,11 +11,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Ist die Ersteinrichtung noch offen?
+         * @description `setup_required` ist `true`, solange noch kein Konto existiert. Clients leiten dann auf die Ersteinrichtung.
+         */
+        get: operations["getSetupStatus"];
         put?: never;
         /**
          * Ersteinrichtung: erstes Admin-Konto anlegen
-         * @description Nur mit Einmal-Setup-Token und nur solange kein Konto existiert (ADR-015).
+         * @description Nur solange noch kein Konto existiert (ADR-015). Ist `VECTRA_SETUP_TOKEN` gesetzt, ist zusätzlich dieses Token nötig; sonst darf die erste Person, die die Installation öffnet, das Administratorkonto anlegen.
          */
         post: operations["setupInstallation"];
         delete?: never;
@@ -2102,11 +2106,18 @@ export interface components {
             password: string;
         };
         SetupRequest: {
-            setup_token: string;
+            /** @description nur nötig, wenn VECTRA_SETUP_TOKEN gesetzt ist */
+            setup_token?: string;
             /** Format: email */
             email: string;
             display_name: string;
             password: string;
+        };
+        SetupStatus: {
+            /** @description noch kein Konto vorhanden */
+            setup_required: boolean;
+            /** @description VECTRA_SETUP_TOKEN ist gesetzt */
+            token_required: boolean;
         };
         PasswordResetRequest: {
             /** Format: email */
@@ -3604,11 +3615,9 @@ export interface components {
             object_type: string;
             /** Format: uuid */
             object_id: string;
+            /** @description Geänderte Werte; Form je Aktion (z. B. `{"value":{"old":…,"new":…}}`) */
             changes?: {
-                [key: string]: {
-                    old?: unknown;
-                    new?: unknown;
-                };
+                [key: string]: unknown;
             };
             reason?: string | null;
             request_id?: string | null;
@@ -4049,6 +4058,27 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     setupInstallation: {
         parameters: {
             query?: never;

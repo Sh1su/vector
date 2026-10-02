@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { api, ProblemError } from '../api/client'
+import { Link, Navigate, useNavigate } from 'react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, ProblemError, type Schemas } from '../api/client'
 import { Icon, type IconName } from '../components/Icon'
 import { Button, Field, inputClass } from '../components/ui'
 
@@ -32,12 +32,17 @@ export function AuthLayout({ children }: { children: ReactNode }) {
   )
 }
 
+function useSetupStatus() {
+  return useQuery({ queryKey: ['setup-status'], queryFn: () => api.get<Schemas['SetupStatus']>('/auth/setup'), retry: false })
+}
+
 function errorText(e: unknown) {
   if (e instanceof ProblemError) return e.problem.errors?.[0]?.message || e.problem.detail || e.problem.title
   return 'Verbindung zum Server fehlgeschlagen.'
 }
 
 export function LoginPage() {
+  const setup = useSetupStatus()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>()
@@ -60,6 +65,7 @@ export function LoginPage() {
     }
   }
 
+  if (setup.data?.setup_required) return <Navigate to="/einrichtung" replace />
   return (
     <AuthLayout>
       <form onSubmit={submit} className="flex w-full max-w-[400px] flex-col gap-4.5">
@@ -73,13 +79,13 @@ export function LoginPage() {
         </Field>
         <Button type="submit" size="lg" disabled={busy}>{busy ? 'Anmelden …' : 'Anmelden'}</Button>
         <div className="text-center text-[13px] leading-normal text-muted">Noch kein Konto? Frag deine Administration nach einer Einladung.</div>
-        <div className="text-center text-[13px]"><Link to="/einrichtung" className="font-semibold text-link">Ersteinrichtung der Installation</Link></div>
       </form>
     </AuthLayout>
   )
 }
 
 export function SetupPage() {
+  const setup = useSetupStatus()
   const [form, setForm] = useState({ setup_token: '', display_name: '', email: '', password: '' })
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -92,7 +98,9 @@ export function SetupPage() {
     setBusy(true)
     setError(undefined)
     try {
-      await api.post('/auth/setup', form)
+      const body: Record<string, string> = { display_name: form.display_name, email: form.email, password: form.password }
+      if (setup.data?.token_required) body.setup_token = form.setup_token
+      await api.post('/auth/setup', body)
       await api.post('/auth/login', { email: form.email, password: form.password })
       await qc.invalidateQueries()
       navigate('/')
@@ -103,19 +111,24 @@ export function SetupPage() {
     }
   }
 
+  if (setup.data && !setup.data.setup_required) return <Navigate to="/login" replace />
   return (
     <AuthLayout>
       <form onSubmit={submit} className="flex w-full max-w-[400px] flex-col gap-4">
         <div className="flex flex-col gap-1.5"><h1 className="m-0 font-display text-[28px] font-semibold">Ersteinrichtung</h1>
-          <div className="text-sm leading-normal text-muted">Lege das erste Administratorkonto an. Das Setup-Token steht im Server-Log oder in der Variable VECTRA_SETUP_TOKEN.</div></div>
-        <Field label="Setup-Token" htmlFor="setup-token"><input id="setup-token" required className={inputClass} value={form.setup_token} onChange={set('setup_token')} autoComplete="off" /></Field>
+          <div className="text-sm leading-normal text-muted">Willkommen! Lege das erste Administratorkonto an. Das geht nur einmal, solange noch kein Konto existiert.</div></div>
+        {setup.data?.token_required && (
+          <Field label="Setup-Token" htmlFor="setup-token" hint="steht in der .env als VECTRA_SETUP_TOKEN (vom Installationsskript erzeugt)">
+            <input id="setup-token" required className={inputClass} value={form.setup_token} onChange={set('setup_token')} autoComplete="off" />
+          </Field>
+        )}
         <Field label="Name" htmlFor="setup-name"><input id="setup-name" required className={inputClass} value={form.display_name} onChange={set('display_name')} autoComplete="name" /></Field>
         <Field label="E-Mail" htmlFor="setup-mail"><input id="setup-mail" type="email" required className={inputClass} value={form.email} onChange={set('email')} autoComplete="email" /></Field>
         <Field label="Passwort" htmlFor="setup-pw" hint="Mindestens 12 Zeichen." error={error}>
           <input id="setup-pw" type="password" required minLength={12} className={inputClass} value={form.password} onChange={set('password')} autoComplete="new-password" />
         </Field>
         <Button type="submit" size="lg" disabled={busy}>Installation einrichten</Button>
-        <div className="text-center text-[13px]"><Link to="/login" className="font-semibold text-link">Zurück zur Anmeldung</Link></div>
+        <div className="text-center text-[13px]"><Link to="/login" className="font-semibold text-link">Zur Anmeldung</Link></div>
       </form>
     </AuthLayout>
   )

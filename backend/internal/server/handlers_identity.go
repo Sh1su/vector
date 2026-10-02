@@ -182,3 +182,11 @@ func str(p *string) string {
 	}
 	return *p
 }
+
+func (s *Server) GetSetupStatus(ctx context.Context, _ api.GetSetupStatusRequestObject) (api.GetSetupStatusResponseObject, error) {
+	req, tok, err := s.d.Identity.SetupStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetSetupStatus200JSONResponse(api.SetupStatus{SetupRequired: req, TokenRequired: tok}), nil
+}

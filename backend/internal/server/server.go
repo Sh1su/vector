@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/sh1su/vector/backend/internal/assistant"
 	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
+	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/oil"
@@ -53,7 +55,7 @@ var _ api.StrictServerInterface = (*Server)(nil)
 // Handler baut den vollständigen HTTP-Handler.
 func Handler(d Deps) http.Handler {
 	s := &Server{d: d}
-	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
+	strict := api.NewStrictHandlerWithOptions(s, []api.StrictMiddlewareFunc{scopeGuard}, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			problem.Write(w, problem.BadRequest("Der Request-Body ist ungültig."), requestID(r))
 		},
@@ -86,7 +88,9 @@ func Handler(d Deps) http.Handler {
 	apiRouter.NotFound(func(w http.ResponseWriter, r *http.Request) { problem.Write(w, problem.NotFound(), requestID(r)) })
 	r.Mount(apiPrefix, apiRouter)
 	r.Get(apiPrefix+"/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "siehe api/openapi.yaml", http.StatusNotImplemented)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(api.SpecJSON)
 	})
 	if d.WebDir != "" {
 		r.NotFound(spa(d.WebDir))
@@ -126,4 +130,23 @@ func convert(src, dst any) error {
 		return err
 	}
 	return json.Unmarshal(b, dst)
+}
+
+// scopeGuard setzt bei API-Tokens die Angaben der Spezifikation durch
+// (ADR-016): Die Operation muss Bearer-Tokens zulassen und das Token den
+// verlangten Scope besitzen. Wirksam ist die Schnittmenge mit den Rollen.
+func scopeGuard(f api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
+	key := strings.ToLower(operationID[:1]) + operationID[1:]
+	sec, known := api.Security[key]
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
+		if a, ok := kernel.ActorFrom(ctx); ok && a.Kind == "api_token" {
+			if !known || !sec.Bearer {
+				return nil, problem.Forbidden("Diese Operation ist mit API-Tokens nicht erlaubt.")
+			}
+			if sec.Scope != "" && !a.HasScope(sec.Scope) {
+				return nil, problem.Forbidden("Dem API-Token fehlt der Scope " + sec.Scope + ".")
+			}
+		}
+		return f(ctx, w, r, req)
+	}
 }

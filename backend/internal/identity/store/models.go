@@ -125,6 +125,20 @@ type IdentityAccount struct {
 	Version       int32
 }
 
+type IdentityApiToken struct {
+	ID         pgtype.UUID
+	AccountID  pgtype.UUID
+	Name       string
+	TokenHash  []byte
+	Prefix     string
+	Scopes     []string
+	VehicleIds []pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
 type IdentityInstallationSetting struct {
 	ID        bool
 	Settings  []byte

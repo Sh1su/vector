@@ -105,6 +105,28 @@ func withAuth(ids *identity.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, apiPrefix)
 		ctx := r.Context()
+		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+			// Persönliches API-Token: kein Cookie, kein CSRF (ADR-015).
+			info, ok, err := ids.ResolveApiToken(ctx, strings.TrimSpace(strings.TrimPrefix(h, "Bearer ")))
+			if err != nil {
+				problem.Write(w, err, requestID(r))
+				return
+			}
+			if !ok {
+				problem.Write(w, problem.Unauthorized(), requestID(r))
+				return
+			}
+			acc, err := ids.Account(ctx, info.AccountID)
+			if err != nil {
+				problem.Write(w, err, requestID(r))
+				return
+			}
+			isAdmin := acc.IsAdmin && contains(info.Scopes, "admin")
+			ctx = kernel.WithActor(ctx, kernel.Actor{AccountID: info.AccountID, IsAdmin: isAdmin, Kind: "api_token", RequestID: requestID(r),
+				Scopes: info.Scopes, VehicleIDs: info.VehicleIDs})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			info, ok, err := ids.ResolveSession(ctx, c.Value)
 			if err != nil {
@@ -138,4 +160,13 @@ func withAuth(ids *identity.Service, next http.Handler) http.Handler {
 
 func unsafe(m string) bool {
 	return m == http.MethodPost || m == http.MethodPut || m == http.MethodPatch || m == http.MethodDelete
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

@@ -57,7 +57,7 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE assistant.request_log, assistant.proposal, assistant.message, assistant.conversation, assistant.user_state, audit.event, maintenance.completion, maintenance.item, fuel.fill, oil.entry, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE identity.api_token, assistant.request_log, assistant.proposal, assistant.message, assistant.conversation, assistant.user_state, audit.event, maintenance.completion, maintenance.item, fuel.fill, oil.entry, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE identity.installation_settings SET settings = '{}'`); err != nil {
@@ -194,7 +194,7 @@ func TestSetupLoginAndSession(t *testing.T) {
 	expect(t, anon.do("POST", "/auth/setup", map[string]any{"setup_token": "falsch", "email": "a@b.de", "display_name": "A", "password": pw}), 403, "wrong setup token")
 	expect(t, anon.do("POST", "/auth/setup", map[string]any{"setup_token": setupToken, "email": "a@b.de", "display_name": "A", "password": "kurz"}), 422, "weak password")
 	admin := e.adminClient()
-	expect(t, anon.do("POST", "/auth/setup", map[string]any{"setup_token": setupToken, "email": "x@b.de", "display_name": "X", "password": pw}), 403, "setup only once (token consumed)")
+	expect(t, anon.do("POST", "/auth/setup", map[string]any{"setup_token": setupToken, "email": "x@b.de", "display_name": "X", "password": pw}), 409, "setup only once")
 	r := admin.do("GET", "/me", nil)
 	expect(t, r, 200, "me")
 	if r.body["email"] != "admin@example.org" || r.body["is_admin"] != true {
@@ -421,7 +421,7 @@ func TestAuthorizationAcrossVehicles(t *testing.T) {
 func TestNotImplementedIs501(t *testing.T) {
 	e := newEnv(t)
 	c := e.adminClient()
-	r := c.do("GET", "/me/api-tokens", nil)
+	r := c.do("GET", "/me/invitations", nil)
 	expect(t, r, 501, "not implemented")
 	if r.header.Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("content type %s", r.header.Get("Content-Type"))

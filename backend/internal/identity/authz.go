@@ -41,7 +41,7 @@ func Authorize(ctx context.Context, db store.DBTX, actor kernel.Actor, vehicleID
 	if err != nil {
 		return "", err
 	}
-	if role == "" {
+	if role == "" || !actor.VehicleAllowed(vehicleID) {
 		return "", problem.NotFound()
 	}
 	if roleRank[role] < roleRank[need] {
@@ -66,4 +66,19 @@ func MemberVehicles(ctx context.Context, db store.DBTX, accountID uuid.UUID) (ma
 		out[uuid.UUID(r.VehicleID.Bytes)] = r.Role
 	}
 	return out, nil
+}
+
+// ActorVehicles liefert die Fahrzeuge mit Rolle, die der Akteur sehen darf
+// (bei API-Tokens ggf. auf einzelne Fahrzeuge beschränkt).
+func ActorVehicles(ctx context.Context, db store.DBTX, actor kernel.Actor) (map[uuid.UUID]string, error) {
+	m, err := MemberVehicles(ctx, db, actor.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	for id := range m {
+		if !actor.VehicleAllowed(id) {
+			delete(m, id)
+		}
+	}
+	return m, nil
 }

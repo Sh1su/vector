@@ -2771,10 +2771,9 @@ type AuditEvent struct {
 	Action         string                                `json:"action"`
 	ActorAccountId nullable.Nullable[openapi_types.UUID] `json:"actor_account_id,omitempty"`
 	ActorKind      AuditEventActorKind                   `json:"actor_kind"`
-	Changes        *map[string]struct {
-		New interface{} `json:"new,omitempty"`
-		Old interface{} `json:"old,omitempty"`
-	} `json:"changes,omitempty"`
+
+	// Changes Geänderte Werte; Form je Aktion (z. B. `{"value":{"old":…,"new":…}}`)
+	Changes    *map[string]interface{}   `json:"changes,omitempty"`
 	Id         openapi_types.UUID        `json:"id"`
 	ObjectId   openapi_types.UUID        `json:"object_id"`
 	ObjectType string                    `json:"object_type"`
@@ -4610,7 +4609,18 @@ type SetupRequest struct {
 	DisplayName string              `json:"display_name"`
 	Email       openapi_types.Email `json:"email"`
 	Password    *string             `json:"password,omitempty"`
-	SetupToken  *string             `json:"setup_token,omitempty"`
+
+	// SetupToken nur nötig, wenn VECTRA_SETUP_TOKEN gesetzt ist
+	SetupToken *string `json:"setup_token,omitempty"`
+}
+
+// SetupStatus defines model for SetupStatus.
+type SetupStatus struct {
+	// SetupRequired noch kein Konto vorhanden
+	SetupRequired bool `json:"setup_required"`
+
+	// TokenRequired VECTRA_SETUP_TOKEN ist gesetzt
+	TokenRequired bool `json:"token_required"`
 }
 
 // Tags defines model for Tags.
@@ -5991,6 +6001,9 @@ type ServerInterface interface {
 	// ConfirmPasswordReset Neues Passwort mit Reset-Token setzen
 	// (POST /auth/password-reset/confirm)
 	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
+	// GetSetupStatus Ist die Ersteinrichtung noch offen?
+	// (GET /auth/setup)
+	GetSetupStatus(w http.ResponseWriter, r *http.Request)
 	// SetupInstallation Ersteinrichtung: erstes Admin-Konto anlegen
 	// (POST /auth/setup)
 	SetupInstallation(w http.ResponseWriter, r *http.Request)
@@ -6549,6 +6562,12 @@ func (_ Unimplemented) RequestPasswordReset(w http.ResponseWriter, r *http.Reque
 // ConfirmPasswordReset Neues Passwort mit Reset-Token setzen
 // (POST /auth/password-reset/confirm)
 func (_ Unimplemented) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSetupStatus Ist die Ersteinrichtung noch offen?
+// (GET /auth/setup)
+func (_ Unimplemented) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7897,6 +7916,20 @@ func (siw *ServerInterfaceWrapper) ConfirmPasswordReset(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ConfirmPasswordReset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSetupStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSetupStatus(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13931,6 +13964,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/auth/setup", wrapper.GetSetupStatus)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/auth/setup", wrapper.SetupInstallation)
 	})
 	r.Group(func(r chi.Router) {
@@ -16652,6 +16688,46 @@ type ConfirmPasswordReset429ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ConfirmPasswordReset429ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSetupStatusRequestObject struct {
+}
+
+type GetSetupStatusResponseObject interface {
+	VisitGetSetupStatusResponse(w http.ResponseWriter) error
+}
+
+type GetSetupStatus200JSONResponse SetupStatus
+
+func (response GetSetupStatus200JSONResponse) VisitGetSetupStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSetupStatus429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response GetSetupStatus429ApplicationProblemPlusJSONResponse) VisitGetSetupStatusResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -34061,6 +34137,9 @@ type StrictServerInterface interface {
 	// ConfirmPasswordReset Neues Passwort mit Reset-Token setzen
 	// (POST /auth/password-reset/confirm)
 	ConfirmPasswordReset(ctx context.Context, request ConfirmPasswordResetRequestObject) (ConfirmPasswordResetResponseObject, error)
+	// GetSetupStatus Ist die Ersteinrichtung noch offen?
+	// (GET /auth/setup)
+	GetSetupStatus(ctx context.Context, request GetSetupStatusRequestObject) (GetSetupStatusResponseObject, error)
 	// SetupInstallation Ersteinrichtung: erstes Admin-Konto anlegen
 	// (POST /auth/setup)
 	SetupInstallation(ctx context.Context, request SetupInstallationRequestObject) (SetupInstallationResponseObject, error)
@@ -35130,6 +35209,30 @@ func (sh *strictHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ConfirmPasswordResetResponseObject); ok {
 		if err := validResponse.VisitConfirmPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSetupStatus operation middleware
+func (sh *strictHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetSetupStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSetupStatus(ctx, request.(GetSetupStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSetupStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSetupStatusResponseObject); ok {
+		if err := validResponse.VisitGetSetupStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

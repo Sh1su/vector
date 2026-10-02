@@ -670,7 +670,7 @@ func (s *Service) DueFeed(ctx context.Context, actor kernel.Actor, minLevel stri
 	if _, ok := rank[minLevel]; !ok {
 		return nil, problem.Validation(problem.FieldError{Pointer: "/min_level", Code: "enum"})
 	}
-	ids, err := identity.MemberVehicles(ctx, s.pool, actor.AccountID)
+	ids, err := identity.ActorVehicles(ctx, s.pool, actor)
 	if err != nil {
 		return nil, err
 	}

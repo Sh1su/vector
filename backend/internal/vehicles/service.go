@@ -308,7 +308,7 @@ type Page struct {
 
 // List liefert alle Fahrzeuge, an denen das Konto Mitglied ist.
 func (s *Service) List(ctx context.Context, actor kernel.Actor, status *string, cursor *string, limit int) (Page, error) {
-	members, err := identity.MemberVehicles(ctx, s.pool, actor.AccountID)
+	members, err := identity.ActorVehicles(ctx, s.pool, actor)
 	if err != nil {
 		return Page{}, err
 	}

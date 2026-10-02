@@ -59,6 +59,7 @@ export function SettingsPage() {
         <div className="flex flex-col gap-5">
           <PasswordSection />
           <SessionsSection />
+          <ApiTokensSection />
           {me?.is_admin && <InstallationSection />}
         </div>
       </main>
@@ -251,6 +252,74 @@ function InstallationSection() {
           <Button type="submit" disabled={s.busy} className="self-start">Speichern</Button>
         </form>
       )}
+    </Section>
+  )
+}
+
+const scopeLabel: Record<string, string> = { 'vehicles:read': 'Lesen', 'entries:write': 'Einträge anlegen/ändern', 'entries:delete': 'Einträge löschen', 'sharing:manage': 'Freigaben', admin: 'Administration' }
+
+function ApiTokensSection() {
+  const qc = useQueryClient()
+  const { vehicles } = useApp()
+  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me') }).data
+  const tokens = useQuery({ queryKey: ['api-tokens'], queryFn: () => api.get<{ items: Schemas['ApiToken'][] }>('/me/api-tokens') })
+  const [name, setName] = useState('')
+  const [scopes, setScopes] = useState<string[]>(['vehicles:read'])
+  const [days, setDays] = useState('365')
+  const [vehicle, setVehicle] = useState('')
+  const [created, setCreated] = useState<string>()
+  const s = useSaver()
+  function create(e: FormEvent) {
+    e.preventDefault()
+    s.run(async () => {
+      const t = await api.post<Schemas['ApiToken']>('/me/api-tokens', { name, scopes, expires_at: new Date(Date.now() + Number(days) * 86400000).toISOString(), vehicle_ids: vehicle ? [vehicle] : null })
+      setCreated(t.token)
+      setName('')
+      qc.invalidateQueries({ queryKey: ['api-tokens'] })
+    }, 'Token angelegt.')
+  }
+  async function revoke(id: string) {
+    if (!confirm('Token widerrufen? Programme, die es nutzen, verlieren sofort den Zugriff.')) return
+    await api.del(`/me/api-tokens/${id}`, '*')
+    qc.invalidateQueries({ queryKey: ['api-tokens'] })
+  }
+  const toggle = (sc: string) => setScopes(scopes.includes(sc) ? scopes.filter((x) => x !== sc) : [...scopes, sc])
+  return (
+    <Section icon="key" title="API-Tokens" sub="Für Skripte und andere Programme: Daten per REST-API abrufen (Authorization: Bearer …). Doku: docs/api.md">
+      {created && (
+        <div role="status" className="flex flex-col gap-2 rounded-[12px] border-[1.5px] border-amber bg-warn-bg p-3.5 text-sm">
+          <b>Neues Token – wird nur jetzt angezeigt:</b>
+          <code className="rounded-[8px] bg-card px-2 py-1.5 text-xs break-all select-all">{created}</code>
+          <button type="button" className="self-start text-xs font-semibold text-link" onClick={() => { navigator.clipboard?.writeText(created); setCreated(undefined) }}>Kopieren und ausblenden</button>
+        </div>
+      )}
+      <form className="flex flex-col gap-3" onSubmit={create}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Field label="Name" htmlFor="t-name"><input id="t-name" required className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Home Assistant" /></Field>
+          <Field label="Gültig (Tage)" htmlFor="t-days"><input id="t-days" inputMode="numeric" className={inputClass} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
+          <Field label="Fahrzeug" htmlFor="t-veh">{select('t-veh', vehicle, setVehicle, [['', 'alle'], ...vehicles.map((v) => [v.id, v.display_name] as [string, string])])}</Field>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(scopeLabel).filter(([k]) => k !== 'admin' || me?.is_admin).map(([k, l]) => (
+            <label key={k} className="flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-sm">
+              <input type="checkbox" className="h-4 w-4 accent-teal" checked={scopes.includes(k)} onChange={() => toggle(k)} />{l}
+            </label>
+          ))}
+        </div>
+        <Feedback s={s} />
+        <Button type="submit" disabled={s.busy || !name.trim() || scopes.length === 0} className="self-start">Token anlegen</Button>
+      </form>
+      <div className="flex flex-col">
+        {(tokens.data?.items ?? []).map((t) => (
+          <div key={t.id} className="flex items-center gap-3 border-t border-line py-2.5">
+            <div className="flex min-w-0 flex-grow flex-col gap-0.5">
+              <div className="text-sm font-semibold">{t.name}</div>
+              <div className="truncate text-xs text-muted">{t.scopes.map((x) => scopeLabel[x] ?? x).join(', ')} · bis {fmtDate(t.expires_at, true)} · {t.last_used_at ? `zuletzt ${fmtDate(t.last_used_at)}` : 'nie benutzt'}</div>
+            </div>
+            <Button variant="outline" onClick={() => revoke(t.id!)}>Widerrufen</Button>
+          </div>
+        ))}
+      </div>
     </Section>
   )
 }
