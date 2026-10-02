@@ -1,7 +1,5 @@
 package kernel
 
-import "math"
-
 // Units sind die Anzeigeeinheiten eines Nutzers (Schema DisplayUnits, ADR-007).
 type Units struct {
 	Distance            string // km | mi
@@ -32,12 +30,6 @@ func UnitsFromSettings(st map[string]any) Units {
 	return u
 }
 
-// Round rundet kaufmännisch auf d Stellen (nur für die Ausgabe, ADR-007).
-func Round(v float64, d int) float64 {
-	p := math.Pow(10, float64(d))
-	return math.Round(v*p) / p
-}
-
 // Display rechnet einen kanonischen Wert in eine Anzeigeeinheit um und rundet.
 func Display(canonical int64, unit string, digits int) float64 {
 	v, err := FromCanonical(canonical, unit)
@@ -60,11 +52,4 @@ func UnitLabel(u string) string {
 		return "qt (UK)"
 	}
 	return u
-}
-
-// DisplayValue entspricht dem Schema DisplayValue: berechneter Wert in der
-// Anzeigeeinheit des Nutzers.
-type DisplayValue struct {
-	Value float64 `json:"value"`
-	Unit  string  `json:"unit"`
 }

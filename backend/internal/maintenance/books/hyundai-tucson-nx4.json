@@ -1,0 +1,29 @@
+{
+  "id": "hyundai-tucson-nx4",
+  "make": "Hyundai",
+  "model": "Tucson",
+  "variant": "NX4 (ab 2021), 1.6 T-GDI, Hybrid und Plug-in-Hybrid",
+  "title": "Hyundai Tucson (NX4) – Wartungsplan Normalbetrieb",
+  "source": "Richtwerte nach dem Hyundai-Wartungsplan für Normalbetrieb in Europa. Intervalle unterscheiden sich je nach Motor, Markt und Erschwernis (Kurzstrecke, Anhänger, Staub). Bitte mit dem Serviceheft bzw. der Bedienungsanleitung des eigenen Fahrzeugs abgleichen; jede Position lässt sich danach anpassen.",
+  "items": [
+    {"key": "inspection", "title": "Inspektion", "category": "service", "interval_months": 12, "interval_distance": {"value": 15000, "unit": "km"},
+     "description": "Jährliche Inspektion nach Hyundai-Wartungsplan; Voraussetzung für Herstellergarantie und Mobilitätsgarantie."},
+    {"key": "engine-oil", "title": "Motoröl und Ölfilter", "category": "fluids", "interval_months": 12, "interval_distance": {"value": 15000, "unit": "km"},
+     "description": "Freigegebenes Öl laut Betriebsanleitung (z. B. ACEA C5 0W-20 bzw. 0W-30). Bei Erschwernis kürzer."},
+    {"key": "cabin-filter", "title": "Innenraumfilter (Klimafilter)", "category": "filters", "interval_months": 12, "interval_distance": {"value": 15000, "unit": "km"}},
+    {"key": "air-filter", "title": "Luftfilter Motor", "category": "filters", "interval_months": 24, "interval_distance": {"value": 30000, "unit": "km"},
+     "description": "Bei Staub oder Kurzstrecke häufiger prüfen."},
+    {"key": "spark-plugs", "title": "Zündkerzen", "category": "service", "interval_months": 72, "interval_distance": {"value": 60000, "unit": "km"},
+     "description": "Iridium-Zündkerzen der T-GDI-Motoren."},
+    {"key": "brake-fluid", "title": "Bremsflüssigkeit", "category": "brakes", "interval_months": 24,
+     "description": "Wechsel alle 2 Jahre unabhängig von der Laufleistung."},
+    {"key": "brakes-check", "title": "Bremsen prüfen (Beläge, Scheiben, Leitungen)", "category": "brakes", "interval_months": 12, "interval_distance": {"value": 15000, "unit": "km"}},
+    {"key": "coolant", "title": "Kühlmittel", "category": "fluids", "interval_months": 24, "interval_distance": {"value": 30000, "unit": "km"},
+     "first_interval_months": 120, "first_interval_distance": {"value": 210000, "unit": "km"},
+     "description": "Erster Wechsel nach 10 Jahren bzw. 210.000 km, danach alle 2 Jahre bzw. 30.000 km."},
+    {"key": "ac-check", "title": "Klimaanlage prüfen (Kältemittel, Kompressor)", "category": "other", "interval_months": 12},
+    {"key": "tires", "title": "Reifen prüfen und rotieren", "category": "tires", "interval_months": 12, "interval_distance": {"value": 15000, "unit": "km"}},
+    {"key": "hu", "title": "Hauptuntersuchung (HU/AU)", "category": "legal_inspection", "interval_months": 24, "first_interval_months": 36,
+     "description": "Gesetzlich: erstmals 3 Jahre nach Erstzulassung, danach alle 2 Jahre."}
+  ]
+}

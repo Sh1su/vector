@@ -51,7 +51,12 @@ data class Problem(
 data class Page<T>(val items: List<T>, @SerialName("next_cursor") val nextCursor: String? = null)
 
 @Serializable
-data class LoginRequest(val email: String, val password: String)
+data class LoginRequest(
+    val email: String,
+    val password: String,
+    /** „android“ hält die Sitzung bis zu 365 Tage (Leerlauf 90 Tage), damit die App angemeldet bleibt. */
+    @SerialName("client_kind") val clientKind: String? = null,
+)
 
 @Serializable
 data class Account(
@@ -73,7 +78,10 @@ data class Vehicle(
     @SerialName("usage_meter") val usageMeter: String = "distance",
     val status: String = "active",
     @SerialName("my_role") val myRole: String = "viewer",
+    @SerialName("default_currency") val defaultCurrency: String = "EUR",
+    @SerialName("owner_time_zone") val ownerTimeZone: String = "Europe/Berlin",
     val version: Long = 0,
+    @SerialName("first_registration") val firstRegistration: String? = null,
 ) {
     val canEdit: Boolean get() = myRole == "owner" || myRole == "editor"
     val meterUnit: String get() = if (usageMeter == "engine_hours") "h" else "km"

@@ -1,0 +1,26 @@
+{
+  "id": "leapmotor-b10",
+  "make": "Leapmotor",
+  "model": "B10",
+  "variant": "Elektro-SUV (ab 2025)",
+  "title": "Leapmotor B10 – Wartungsplan Elektrofahrzeug",
+  "source": "Richtwerte für den Leapmotor B10 (Europa); Leapmotor nennt eine Inspektion alle 2 Jahre bzw. 30.000 km. Verschleiß- und Prüfpositionen sind übliche Intervalle für Elektrofahrzeuge. Bitte mit dem Serviceheft bzw. der Leapmotor-App abgleichen; jede Position lässt sich danach anpassen.",
+  "items": [
+    {"key": "inspection", "title": "Inspektion", "category": "service", "interval_months": 24, "interval_distance": {"value": 30000, "unit": "km"},
+     "description": "Inspektion inkl. Sichtprüfung Hochvoltsystem, Fahrwerk und Software-Updates; Voraussetzung für die Herstellergarantie."},
+    {"key": "cabin-filter", "title": "Innenraumfilter (Klimafilter)", "category": "filters", "interval_months": 12, "interval_distance": {"value": 20000, "unit": "km"}},
+    {"key": "brake-fluid", "title": "Bremsflüssigkeit", "category": "brakes", "interval_months": 24,
+     "description": "Wechsel alle 2 Jahre unabhängig von der Laufleistung."},
+    {"key": "brakes-check", "title": "Bremsen prüfen und reinigen", "category": "brakes", "interval_months": 12,
+     "description": "Durch Rekuperation werden die Bremsen wenig genutzt und können korrodieren."},
+    {"key": "coolant", "title": "Kühlmittel Batterie und Antrieb", "category": "fluids", "interval_months": 48, "interval_distance": {"value": 100000, "unit": "km"},
+     "description": "Füllstand bei jeder Inspektion prüfen."},
+    {"key": "ac-check", "title": "Klimaanlage und Wärmepumpe prüfen", "category": "other", "interval_months": 24},
+    {"key": "battery-12v", "title": "12-V-Batterie prüfen", "category": "other", "interval_months": 12},
+    {"key": "tires", "title": "Reifen prüfen und rotieren", "category": "tires", "interval_months": 12, "interval_distance": {"value": 10000, "unit": "km"},
+     "description": "Hohes Drehmoment und Gewicht: Reifen verschleißen schneller als beim Verbrenner."},
+    {"key": "wipers", "title": "Wischerblätter", "category": "other", "interval_months": 12},
+    {"key": "hu", "title": "Hauptuntersuchung (HU)", "category": "legal_inspection", "interval_months": 24, "first_interval_months": 36,
+     "description": "Gesetzlich: erstmals 3 Jahre nach Erstzulassung, danach alle 2 Jahre (ohne AU)."}
+  ]
+}

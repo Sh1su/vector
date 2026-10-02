@@ -26,10 +26,21 @@ import (
 )
 
 // Sitzungsdauer (ID-02): Leerlauf 7 Tage, höchstens 30 Tage.
+// Die Android-App bleibt angemeldet: Leerlauf 90 Tage, höchstens 365 Tage (Gerät mit
+// Bildschirmsperre, Sitzung in den Einstellungen jederzeit beendbar).
 const (
 	sessionIdle     = 7 * 24 * time.Hour
 	sessionAbsolute = 30 * 24 * time.Hour
+	appIdle         = 90 * 24 * time.Hour
+	appAbsolute     = 365 * 24 * time.Hour
 )
+
+func sessionLimits(kind string) (idle, absolute time.Duration) {
+	if kind == "android" {
+		return appIdle, appAbsolute
+	}
+	return sessionIdle, sessionAbsolute
+}
 
 type Account struct {
 	ID            uuid.UUID
@@ -125,7 +136,10 @@ type NewSession struct {
 }
 
 // Login prüft E-Mail und Passwort und legt eine Web-Sitzung an (ID-02, ID-03).
-func (s *Service) Login(ctx context.Context, email, password, clientIP, userAgent string) (NewSession, error) {
+func (s *Service) Login(ctx context.Context, email, password, clientKind, clientIP, userAgent string) (NewSession, error) {
+	if clientKind != "android" {
+		clientKind = "web"
+	}
 	email = strings.ToLower(strings.TrimSpace(email))
 	key := clientIP + "|" + email
 	if wait := s.throttle.wait(key); wait > 0 {
@@ -149,10 +163,11 @@ func (s *Service) Login(ctx context.Context, email, password, clientIP, userAgen
 	s.throttle.reset(key)
 	token, csrf := randomToken(32), randomToken(32)
 	now := time.Now()
-	abs := now.Add(sessionAbsolute)
+	idle, absolute := sessionLimits(clientKind)
+	abs := now.Add(absolute)
 	if err := q.InsertSession(ctx, store.InsertSessionParams{ID: pgUUID(kernel.NewID()), AccountID: a.ID, TokenHash: hashToken(token),
-		CsrfToken: csrf, ClientKind: "web", UserAgent: truncate(userAgent, 300),
-		IdleExpiresAt: pgtype.Timestamptz{Time: now.Add(sessionIdle), Valid: true}, AbsoluteExpiresAt: pgtype.Timestamptz{Time: abs, Valid: true}}); err != nil {
+		CsrfToken: csrf, ClientKind: clientKind, UserAgent: truncate(userAgent, 300),
+		IdleExpiresAt: pgtype.Timestamptz{Time: now.Add(idle), Valid: true}, AbsoluteExpiresAt: pgtype.Timestamptz{Time: abs, Valid: true}}); err != nil {
 		return NewSession{}, err
 	}
 	_ = q.MarkLogin(ctx, a.ID)
@@ -164,6 +179,15 @@ type SessionInfo struct {
 	SessionID uuid.UUID
 	AccountID uuid.UUID
 	CSRFToken string
+}
+
+// SessionView ist eine eigene Sitzung für die Einstellungsseite.
+type SessionView struct {
+	ID         uuid.UUID
+	ClientKind string
+	UserAgent  string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
 }
 
 // ResolveSession prüft ein Sitzungs-Token und verlängert die Leerlaufzeit.
@@ -178,7 +202,8 @@ func (s *Service) ResolveSession(ctx context.Context, token string) (SessionInfo
 	}
 	// Leerlaufzeit höchstens einmal pro Minute fortschreiben.
 	if time.Since(row.LastSeenAt.Time) > time.Minute {
-		_ = q.TouchSession(ctx, store.TouchSessionParams{ID: row.ID, IdleExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(sessionIdle), Valid: true}})
+		idle, _ := sessionLimits(row.ClientKind)
+		_ = q.TouchSession(ctx, store.TouchSessionParams{ID: row.ID, IdleExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(idle), Valid: true}})
 	}
 	return SessionInfo{SessionID: uuid.UUID(row.ID.Bytes), AccountID: uuid.UUID(row.AccountID.Bytes), CSRFToken: row.CsrfToken}, true, nil
 }
@@ -204,6 +229,63 @@ func (s *Service) UpdateDisplayName(ctx context.Context, id uuid.UUID, name stri
 	return toAccount(a), err
 }
 
+// ChangePassword prüft das bisherige Passwort, setzt das neue und beendet alle anderen Sitzungen.
+func (s *Service) ChangePassword(ctx context.Context, accountID, sessionID uuid.UUID, current, next string) error {
+	q := store.New(s.pool)
+	a, err := q.GetAccountByID(ctx, pgUUID(accountID))
+	if err != nil {
+		return err
+	}
+	key := "pw|" + accountID.String()
+	if wait := s.throttle.wait(key); wait > 0 {
+		return problem.TooManyRequests("Zu viele Fehlversuche. Bitte später erneut versuchen.")
+	}
+	if !a.PasswordHash.Valid || !VerifyPassword(current, a.PasswordHash.String) {
+		s.throttle.fail(key)
+		return problem.Validation(problem.FieldError{Pointer: "/current_password", Code: "invalid_credentials", Message: "Das bisherige Passwort stimmt nicht."})
+	}
+	s.throttle.reset(key)
+	if err := CheckPasswordPolicy(next); err != nil {
+		return problem.Validation(problem.FieldError{Pointer: "/new_password", Code: "weak_password", Message: err.Error()})
+	}
+	hash, err := HashPassword(next)
+	if err != nil {
+		return err
+	}
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		qt := store.New(tx)
+		if err := qt.UpdatePasswordHash(ctx, store.UpdatePasswordHashParams{ID: pgUUID(accountID), PasswordHash: pgtype.Text{String: hash, Valid: true}}); err != nil {
+			return err
+		}
+		return qt.RevokeOtherSessions(ctx, store.RevokeOtherSessionsParams{AccountID: pgUUID(accountID), ID: pgUUID(sessionID)})
+	})
+}
+
+// Sessions listet die gültigen Sitzungen eines Kontos, zuletzt aktive zuerst.
+func (s *Service) Sessions(ctx context.Context, accountID uuid.UUID) ([]SessionView, error) {
+	rows, err := store.New(s.pool).ListSessions(ctx, pgUUID(accountID))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SessionView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, SessionView{ID: uuid.UUID(r.ID.Bytes), ClientKind: r.ClientKind, UserAgent: r.UserAgent, CreatedAt: r.CreatedAt.Time, LastSeenAt: r.LastSeenAt.Time})
+	}
+	return out, nil
+}
+
+// RevokeSession beendet eine eigene Sitzung (auch die aktuelle).
+func (s *Service) RevokeSession(ctx context.Context, accountID, sessionID uuid.UUID) error {
+	n, err := store.New(s.pool).RevokeOwnSession(ctx, store.RevokeOwnSessionParams{ID: pgUUID(sessionID), AccountID: pgUUID(accountID)})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return problem.NotFound()
+	}
+	return nil
+}
+
 // Settings sind Nutzereinstellungen als JSON (Schema UserSettings der API).
 func (s *Service) Settings(ctx context.Context, id uuid.UUID) (map[string]any, error) {
 	a, err := store.New(s.pool).GetAccountByID(ctx, pgUUID(id))
@@ -216,6 +298,18 @@ func (s *Service) Settings(ctx context.Context, id uuid.UUID) (map[string]any, e
 		mergePatch(out, stored)
 	}
 	return out, nil
+}
+
+// OwnerSettings liefert die Einstellungen des Fahrzeughalters (z. B. Wartungsschwellen als
+// Vorgabe für alle Definitionen des Fahrzeugs); leer, wenn es keinen Halter gibt.
+func (s *Service) OwnerSettings(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) map[string]any {
+	raw, err := store.New(db).VehicleOwnerSettings(ctx, pgUUID(vehicleID))
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+	return m
 }
 
 // PatchSettings wendet einen JSON Merge Patch (RFC 7396) an.

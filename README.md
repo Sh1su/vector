@@ -14,8 +14,9 @@ Kilometerstand, Tanken und Laden, Öl, Wartung und ein optionaler KI-Assistent. 
 | **Kilometerstand** | Stände erfassen, Plausibilitätsprüfung (rückläufig, unrealistische Sprünge), Korrekturen mit Historie, Tachotausch |
 | **Kraftstoff & Laden** | Benzin, Diesel, Autogas, Strom; Verbrauch je Tankintervall, Durchschnitt und Monatswerte, Preis pro Liter/kWh, Netz- und Batterieverbrauch bei E-Autos |
 | **Öl** | Messung, Nachfüllung, Ölwechsel; Verbrauch je Messreihe und Nachfüllrate (ml bzw. l je 1.000 km) |
-| **Wartung** | Intervalle nach Zeit und/oder km, Stufen „demnächst / fällig / überfällig“, **Wartungsplan-Vorlagen** (u. a. Mercedes-Benz Sprinter und Vito CDI, Reisemobil-Aufbau) zum Vorab-Erfassen |
-| **Assistent (optional)** | Fragen in natürlicher Sprache, Einträge per Satz vorbereiten („bei 143.520 km 0,7 l Öl nachgefüllt“); speichert nie selbst, jeder Vorschlag wird bestätigt. Claude (Anthropic) oder lokal mit Ollama |
+| **Wartung & Service** | Intervalle nach Zeit und/oder km, Stufen „demnächst / fällig / überfällig“, **Wartungsbücher** zum Übernehmen (u. a. Mercedes-Benz Sprinter und Vito CDI, Reisemobil-Aufbau, Hyundai Tucson, Leapmotor B10), Servicehistorie mit Teilen und Arbeitslohn |
+| **Fahrten, Kosten, Dokumente** | Fahrtenbuch mit Kategorien, Kostenbuch mit wiederkehrenden Kosten und Auswertung, Fahrzeugakte mit Belegen, Fotos und Anhängen |
+| **Assistent (optional)** | Fragen in natürlicher Sprache, Einträge per Satz vorbereiten („bei 143.520 km 0,7 l Öl nachgefüllt“); speichert nie selbst, jeder Vorschlag wird bestätigt. Mit Claude (Anthropic); dazu ein MCP-Server für Claude Desktop/Claude Code |
 | **Teilen & Rechte** | Rollen je Fahrzeug (Eigentümer, Bearbeiter, Leser), vollständige Änderungshistorie |
 | **API** | REST-API (OpenAPI 3.1) mit persönlichen API-Tokens – z. B. für Home Assistant, Grafana oder eigene Skripte |
 | **Apps** | Web-App (hell/dunkel), Android-App mit Offline-Erfassung |
@@ -58,7 +59,8 @@ Weitere Variablen: `VECTRA_MODE=local|domain`, `VECTRA_PORT` (Standard 8080), `V
 ```bash
 docker compose pull && docker compose up -d     # aktualisieren (Migrationen laufen automatisch)
 docker compose logs -f vectra                   # Logs
-docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump   # Sicherung
+docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump   # Sicherung der Datenbank
+# zusätzlich das Volume „files“ (Dokumente, Fotos) sichern
 ```
 
 Manuelle Installation, eigener Reverse-Proxy (z. B. Nginx Proxy Manager) und die Android-App: [`deploy/README.md`](deploy/README.md).
@@ -74,31 +76,26 @@ Alle Einstellungen kommen aus der Umgebung (`.env`):
 | `VECTRA_COOKIE_SECURE` | `true` | `false` nur bei Zugriff über `http://` (Heimnetz) |
 | `VECTRA_SETUP_TOKEN` | leer | gesetzt: Ersteinrichtung nur mit diesem Token |
 | `VECTRA_ODOMETER_VMAX_KMH` | `250` | Grenze für „unrealistischer Sprung“ |
-| `VECTRA_ASSISTANT_*` | leer | KI-Assistent, siehe unten |
+| `VECTRA_MAX_UPLOAD_MB` | `25` | maximale Dateigröße für Dokumente und Fotos |
+| `VECTRA_ASSISTANT_*`, `ANTHROPIC_API_KEY` | leer | KI-Assistent, siehe unten |
 
 Einheiten, Zeitzone, Währung und Wartungsschwellen stellt jede Person in der Web-App unter **Einstellungen** ein; Admins zusätzlich die Vorgaben der Installation.
 
 ### KI-Assistent (optional)
 
-In `.env` einen Anbieter eintragen, `docker compose up -d`, dann in der Web-App unter **Einstellungen → Installation** aktivieren:
+In `.env` eintragen, danach `docker compose up -d`:
 
 ```bash
-# Claude (Anthropic) – Daten gehen an Anthropic; jede Person stimmt einmalig zu
 VECTRA_ASSISTANT_PROVIDER=anthropic
-VECTRA_ASSISTANT_API_KEY=sk-ant-…
-# VECTRA_ASSISTANT_MODEL=claude-opus-5-5   (Standard)
-
-# oder lokal mit Ollama (eigener Container, nicht im Basis-Stack)
-VECTRA_ASSISTANT_PROVIDER=ollama
-VECTRA_ASSISTANT_MODEL=qwen2.5:14b
-VECTRA_ASSISTANT_BASE_URL=http://ollama:11434/v1
+VECTRA_ASSISTANT_MODEL=claude-sonnet-4-5
+ANTHROPIC_API_KEY=sk-ant-…
 ```
 
-Details: [`deploy/README.md`](deploy/README.md#ki-assistent-optional).
+Details, MCP-Anbindung und Werkzeuge: [`docs/phase-3/30-assistent.md`](docs/phase-3/30-assistent.md).
 
 ## API
 
-Vectra hat eine vollständige REST-API (`/api/v1`, JSON). Für Skripte legst du unter **Einstellungen → API-Tokens** ein Token mit passenden Rechten an:
+Vectra hat eine vollständige REST-API (`/api/v1`, JSON). Für Skripte legst du unter **Einstellungen → KI-Zugang (MCP)** ein persönliches Token mit passenden Rechten an; es gilt für den MCP-Server und die REST-API:
 
 ```bash
 curl -H "Authorization: Bearer vct_…" https://vectra.example.org/api/v1/vehicles

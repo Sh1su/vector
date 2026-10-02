@@ -57,6 +57,11 @@ fun HomeScreen(
     onAddReading: () -> Unit,
     onOpenPending: () -> Unit,
     onRefresh: () -> Unit,
+    onMaintenance: () -> Unit = {},
+    onCosts: () -> Unit = {},
+    onTrips: () -> Unit = {},
+    onDocuments: () -> Unit = {},
+    onAssistant: (() -> Unit)? = null,
 ) {
     val c = V.colors
     val v = state.vehicle
@@ -99,16 +104,20 @@ fun HomeScreen(
                 val km = state.current?.meterValue?.let { Format.meter(it.canonical, v?.meterUnit ?: "km") } ?: "–"
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     HeroTile(VIcons.gauge, if (v?.meterUnit == "h") "Betriebsstunden" else "Kilometerstand", km, Modifier.weight(1f), onClick = onOdometer)
-                    HeroTile(VIcons.wrench, "Nächster Service", "–", Modifier.weight(1f))
+                    HeroTile(VIcons.wrench, state.nextDue?.title ?: "Nächste Wartung", state.nextDue?.let { levelLabel(it.level) } ?: "–", Modifier.weight(1f), onClick = onMaintenance)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HeroTile(VIcons.fuel, "Ø Verbrauch", "–", Modifier.weight(1f))
-                    HeroTile(VIcons.oil, "Ölverbrauch", "–", Modifier.weight(1f))
+                    HeroTile(VIcons.euro, "Kosten dieses Jahr", state.yearCosts ?: "–", Modifier.weight(1f), onClick = onCosts)
+                    HeroTile(VIcons.route, "Fahrten", "Starten", Modifier.weight(1f), onClick = onTrips)
                 }
             }
         }
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                state.photo?.let { p ->
+                    androidx.compose.foundation.Image(p, v?.displayName, Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(16.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                }
                 if (state.freshness.offline) {
                     Note(NoteKind.Soft, "Offline – angezeigt wird der zuletzt geladene Stand" + (state.freshness.syncedAt?.let { " vom $it" } ?: "") + ".", icon = VIcons.cloudoff)
                 }
@@ -125,10 +134,13 @@ fun HomeScreen(
                         VButton("Verlauf", onOdometer, Modifier.weight(1f), kind = ButtonKind.Outline, icon = VIcons.clock, enabled = v != null)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickTile(VIcons.fuel, "Tanken", Modifier.weight(1f), null)
-                        QuickTile(VIcons.oil, "Öl", Modifier.weight(1f), null)
-                        QuickTile(VIcons.gauge, "km-Stand", Modifier.weight(1f), if (v?.canEdit == true) onAddReading else null)
-                        QuickTile(VIcons.scan, "Beleg", Modifier.weight(1f), null)
+                        QuickTile(VIcons.route, "Fahrt", Modifier.weight(1f), if (v != null) onTrips else null)
+                        QuickTile(VIcons.wrench, "Wartung", Modifier.weight(1f), if (v != null) onMaintenance else null)
+                        QuickTile(VIcons.euro, "Kosten", Modifier.weight(1f), if (v != null) onCosts else null)
+                        QuickTile(VIcons.scan, "Beleg", Modifier.weight(1f), if (v?.canEdit == true) onDocuments else null)
+                    }
+                    if (onAssistant != null) {
+                        VButton("Mit dem Assistenten sprechen", onAssistant, Modifier.fillMaxWidth(), kind = ButtonKind.Navy, icon = VIcons.mic, height = 48.dp)
                     }
                 }
                 SectionTitle("Zuletzt erfasst") {

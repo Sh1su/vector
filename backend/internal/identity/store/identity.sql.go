@@ -71,32 +71,45 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (IdentityA
 }
 
 const getActiveApiToken = `-- name: GetActiveApiToken :one
-SELECT t.id, t.account_id, t.name, t.token_hash, t.prefix, t.scopes, t.vehicle_ids, t.expires_at, t.created_at, t.last_used_at, t.revoked_at FROM identity.api_token t
-JOIN identity.account a ON a.id = t.account_id
+SELECT t.id, t.account_id, t.name, t.token_hash, t.scopes, t.vehicle_ids, t.expires_at, t.created_at, t.last_used_at, t.revoked_at, a.is_admin FROM identity.api_token t JOIN identity.account a ON a.id = t.account_id
 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND a.status = 'active'
 `
 
-func (q *Queries) GetActiveApiToken(ctx context.Context, tokenHash []byte) (IdentityApiToken, error) {
+type GetActiveApiTokenRow struct {
+	ID         pgtype.UUID
+	AccountID  pgtype.UUID
+	Name       string
+	TokenHash  []byte
+	Scopes     []string
+	VehicleIds []pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+	IsAdmin    bool
+}
+
+func (q *Queries) GetActiveApiToken(ctx context.Context, tokenHash []byte) (GetActiveApiTokenRow, error) {
 	row := q.db.QueryRow(ctx, getActiveApiToken, tokenHash)
-	var i IdentityApiToken
+	var i GetActiveApiTokenRow
 	err := row.Scan(
 		&i.ID,
 		&i.AccountID,
 		&i.Name,
 		&i.TokenHash,
-		&i.Prefix,
 		&i.Scopes,
 		&i.VehicleIds,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT s.id, s.account_id, s.csrf_token, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
+SELECT s.id, s.account_id, s.csrf_token, s.client_kind, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
 FROM identity.session s
 JOIN identity.account a ON a.id = s.account_id
 WHERE s.token_hash = $1 AND s.revoked_at IS NULL
@@ -108,6 +121,7 @@ type GetActiveSessionRow struct {
 	ID                pgtype.UUID
 	AccountID         pgtype.UUID
 	CsrfToken         string
+	ClientKind        string
 	IdleExpiresAt     pgtype.Timestamptz
 	AbsoluteExpiresAt pgtype.Timestamptz
 	LastSeenAt        pgtype.Timestamptz
@@ -120,22 +134,12 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 		&i.ID,
 		&i.AccountID,
 		&i.CsrfToken,
+		&i.ClientKind,
 		&i.IdleExpiresAt,
 		&i.AbsoluteExpiresAt,
 		&i.LastSeenAt,
 	)
 	return i, err
-}
-
-const getInstallationSettings = `-- name: GetInstallationSettings :one
-SELECT settings FROM identity.installation_settings WHERE id
-`
-
-func (q *Queries) GetInstallationSettings(ctx context.Context) ([]byte, error) {
-	row := q.db.QueryRow(ctx, getInstallationSettings)
-	var settings []byte
-	err := row.Scan(&settings)
-	return settings, err
 }
 
 const getRole = `-- name: GetRole :one
@@ -197,8 +201,8 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (I
 }
 
 const insertApiToken = `-- name: InsertApiToken :one
-INSERT INTO identity.api_token (id, account_id, name, token_hash, prefix, scopes, vehicle_ids, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, account_id, name, token_hash, prefix, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at
+INSERT INTO identity.api_token (id, account_id, name, token_hash, scopes, vehicle_ids, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, account_id, name, token_hash, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at
 `
 
 type InsertApiTokenParams struct {
@@ -206,7 +210,6 @@ type InsertApiTokenParams struct {
 	AccountID  pgtype.UUID
 	Name       string
 	TokenHash  []byte
-	Prefix     string
 	Scopes     []string
 	VehicleIds []pgtype.UUID
 	ExpiresAt  pgtype.Timestamptz
@@ -218,7 +221,6 @@ func (q *Queries) InsertApiToken(ctx context.Context, arg InsertApiTokenParams) 
 		arg.AccountID,
 		arg.Name,
 		arg.TokenHash,
-		arg.Prefix,
 		arg.Scopes,
 		arg.VehicleIds,
 		arg.ExpiresAt,
@@ -229,7 +231,6 @@ func (q *Queries) InsertApiToken(ctx context.Context, arg InsertApiTokenParams) 
 		&i.AccountID,
 		&i.Name,
 		&i.TokenHash,
-		&i.Prefix,
 		&i.Scopes,
 		&i.VehicleIds,
 		&i.ExpiresAt,
@@ -286,7 +287,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 }
 
 const listApiTokens = `-- name: ListApiTokens :many
-SELECT id, account_id, name, token_hash, prefix, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC
+SELECT id, account_id, name, token_hash, scopes, vehicle_ids, expires_at, created_at, last_used_at, revoked_at FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC
 `
 
 func (q *Queries) ListApiTokens(ctx context.Context, accountID pgtype.UUID) ([]IdentityApiToken, error) {
@@ -303,7 +304,6 @@ func (q *Queries) ListApiTokens(ctx context.Context, accountID pgtype.UUID) ([]I
 			&i.AccountID,
 			&i.Name,
 			&i.TokenHash,
-			&i.Prefix,
 			&i.Scopes,
 			&i.VehicleIds,
 			&i.ExpiresAt,
@@ -537,20 +537,6 @@ func (q *Queries) UpdateAccountSettings(ctx context.Context, arg UpdateAccountSe
 	return i, err
 }
 
-const updateInstallationSettings = `-- name: UpdateInstallationSettings :exec
-UPDATE identity.installation_settings SET settings = $1, updated_by = $2, updated_at = now(), version = version + 1 WHERE id
-`
-
-type UpdateInstallationSettingsParams struct {
-	Settings  []byte
-	UpdatedBy pgtype.UUID
-}
-
-func (q *Queries) UpdateInstallationSettings(ctx context.Context, arg UpdateInstallationSettingsParams) error {
-	_, err := q.db.Exec(ctx, updateInstallationSettings, arg.Settings, arg.UpdatedBy)
-	return err
-}
-
 const updatePasswordHash = `-- name: UpdatePasswordHash :exec
 UPDATE identity.account SET password_hash = $2, updated_at = now(), version = version + 1 WHERE id = $1
 `
@@ -563,4 +549,16 @@ type UpdatePasswordHashParams struct {
 func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
 	_, err := q.db.Exec(ctx, updatePasswordHash, arg.ID, arg.PasswordHash)
 	return err
+}
+
+const vehicleOwnerSettings = `-- name: VehicleOwnerSettings :one
+SELECT a.settings FROM identity.vehicle_membership m JOIN identity.account a ON a.id = m.account_id
+WHERE m.vehicle_id = $1 AND m.role = 'owner' LIMIT 1
+`
+
+func (q *Queries) VehicleOwnerSettings(ctx context.Context, vehicleID pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, vehicleOwnerSettings, vehicleID)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
 }

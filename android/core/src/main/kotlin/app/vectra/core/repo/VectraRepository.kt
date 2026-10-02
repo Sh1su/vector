@@ -1,6 +1,17 @@
 package app.vectra.core.repo
 
+import app.vectra.core.model.CostEntry
+import app.vectra.core.model.CostOccurrenceList
+import app.vectra.core.model.CostReport
+import app.vectra.core.model.DocumentMeta
+import app.vectra.core.model.DueStatus
+import app.vectra.core.model.FileMeta
 import app.vectra.core.model.OdometerReading
+import app.vectra.core.model.ServiceEntry
+import app.vectra.core.model.Trip
+import app.vectra.core.model.TripCategory
+import app.vectra.core.model.TripReport
+import app.vectra.core.model.VehicleImage
 import app.vectra.core.model.OdometerValue
 import app.vectra.core.model.Vehicle
 import app.vectra.core.model.VectraJson
@@ -82,6 +93,41 @@ class VectraRepository(val api: ApiClient, private val cache: JsonCache, val out
         outbox.enqueue(entry)
         return entry
     }
+
+    // --- Wartung, Service, Kosten, Fahrten, Dokumente: lesen mit Cache-Rückfall ---
+
+    suspend fun due(vehicleId: String): Loaded<List<DueStatus>> =
+        cached("due:$vehicleId", ListSerializer(DueStatus.serializer())) { api.dueStatus(vehicleId) }
+
+    suspend fun services(vehicleId: String): Loaded<List<ServiceEntry>> =
+        cached("service:$vehicleId", ListSerializer(ServiceEntry.serializer())) { api.serviceEntries(vehicleId) }
+
+    suspend fun costReport(vehicleId: String, from: String, to: String): Loaded<CostReport> =
+        cached("costs:$vehicleId:$from:$to", CostReport.serializer()) { api.costReport(vehicleId, from, to) }
+
+    suspend fun occurrences(vehicleId: String): Loaded<CostOccurrenceList> =
+        cached("occ:$vehicleId", CostOccurrenceList.serializer()) { api.costOccurrences(vehicleId) }
+
+    suspend fun costEntries(vehicleId: String): Loaded<List<CostEntry>> =
+        cached("costentries:$vehicleId", ListSerializer(CostEntry.serializer())) { api.costEntries(vehicleId) }
+
+    suspend fun trips(vehicleId: String): Loaded<List<Trip>> =
+        cached("trips:$vehicleId", ListSerializer(Trip.serializer())) { api.trips(vehicleId) }
+
+    suspend fun tripCategories(vehicleId: String): Loaded<List<TripCategory>> =
+        cached("tripcats:$vehicleId", ListSerializer(TripCategory.serializer())) { api.tripCategories(vehicleId) }
+
+    suspend fun tripReport(vehicleId: String, from: String, to: String): Loaded<TripReport> =
+        cached("tripreport:$vehicleId:$from", TripReport.serializer()) { api.tripReport(vehicleId, from, to) }
+
+    suspend fun documents(vehicleId: String): Loaded<List<DocumentMeta>> =
+        cached("docs:$vehicleId", ListSerializer(DocumentMeta.serializer())) { api.documents(vehicleId) }
+
+    suspend fun files(vehicleId: String): Loaded<List<FileMeta>> =
+        cached("files:$vehicleId", ListSerializer(FileMeta.serializer())) { api.files(vehicleId) }
+
+    suspend fun images(vehicleId: String): Loaded<List<VehicleImage>> =
+        cached("images:$vehicleId", ListSerializer(VehicleImage.serializer())) { api.vehicleImages(vehicleId) }
 
     suspend fun clear() = cache.clear()
 }

@@ -1,0 +1,142 @@
+{
+  "id": "mercedes-sprinter-907-cdi",
+  "make": "Mercedes-Benz",
+  "model": "Sprinter",
+  "variant": "Baureihe 907/910 (ab 2018), CDI-Diesel OM651/OM654, z. B. Modelljahr 2019 – auch Basis vieler Reisemobile",
+  "title": "Mercedes-Benz Sprinter CDI (907/910) – Wartungsplan",
+  "source": "Richtwerte ohne Gewähr. Maßgeblich sind Serviceheft, Wartungsnachweis und die Serviceanzeige (ASSYST PLUS) des Fahrzeugs; bei erschwerten Bedingungen (Kurzstrecke, Anhänger, Staub, hohe Zuladung) verkürzen sich die Intervalle. Jede Position lässt sich nach dem Übernehmen anpassen.",
+  "items": [
+    {
+      "key": "service",
+      "title": "Wartung (Service A/B) mit Motoröl und Ölfilter",
+      "category": "service",
+      "description": "Wechselnd Service A und B nach ASSYST PLUS. Motoröl nach MB-Freigabe 229.51/229.52 (z. B. 5W-30).",
+      "interval_months": 24,
+      "interval_distance": {
+        "value": 40000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "cabin-filter",
+      "title": "Innenraum-/Staubfilter",
+      "category": "filters",
+      "description": "Mit jeder Wartung.",
+      "interval_months": 24,
+      "interval_distance": {
+        "value": 40000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "air-filter",
+      "title": "Luftfilter",
+      "category": "filters",
+      "description": "Bei Staub früher.",
+      "interval_months": 48,
+      "interval_distance": {
+        "value": 80000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "fuel-filter",
+      "title": "Kraftstofffilter (Diesel)",
+      "category": "filters",
+      "description": "Mit Entwässerung des Wasserabscheiders.",
+      "interval_months": 48,
+      "interval_distance": {
+        "value": 80000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "brake-fluid",
+      "title": "Bremsflüssigkeit",
+      "category": "brakes",
+      "description": "Wechsel unabhängig von der Laufleistung.",
+      "interval_months": 24
+    },
+    {
+      "key": "brakes-check",
+      "title": "Bremsbeläge und -scheiben prüfen",
+      "category": "brakes",
+      "description": "Sichtprüfung, Verschleißanzeige.",
+      "interval_months": 12,
+      "interval_distance": {
+        "value": 20000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "coolant",
+      "title": "Kühlmittel",
+      "category": "fluids",
+      "description": "Langzeitkühlmittel nach MB 325.x.",
+      "interval_months": 180,
+      "interval_distance": {
+        "value": 250000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "belt",
+      "title": "Keilrippenriemen und Spannrolle",
+      "category": "service",
+      "description": "Steuerkette: kein regelmäßiger Wechsel vorgesehen.",
+      "interval_months": 72,
+      "interval_distance": {
+        "value": 120000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "atf",
+      "title": "Automatikgetriebeöl und Filter (7G-/9G-TRONIC)",
+      "category": "fluids",
+      "description": "Nur bei Automatikgetriebe.",
+      "interval_distance": {
+        "value": 125000,
+        "unit": "km"
+      }
+    },
+    {
+      "key": "ac-service",
+      "title": "Klimaanlage (Kältemittel, Desinfektion)",
+      "category": "other",
+      "interval_months": 24
+    },
+    {
+      "key": "battery",
+      "title": "Starterbatterie prüfen",
+      "category": "other",
+      "description": "Ruhespannung und Pole.",
+      "interval_months": 12
+    },
+    {
+      "key": "tires",
+      "title": "Reifen: Alter und Profil prüfen",
+      "category": "tires",
+      "description": "Reifen älter als 6–8 Jahre ersetzen (DOT-Nummer).",
+      "interval_months": 12
+    },
+    {
+      "key": "hu",
+      "title": "Hauptuntersuchung mit AU (HU/TÜV)",
+      "category": "legal_inspection",
+      "description": "Bis 3,5 t: erstmals nach 36 Monaten, danach alle 24 Monate. Über 3,5 t gelten kürzere Fristen.",
+      "interval_months": 24,
+      "first_interval_months": 36
+    },
+    {
+      "key": "adblue-filter",
+      "title": "AdBlue-Filter (SCR)",
+      "category": "filters",
+      "description": "Nur bei Euro-6-Motoren mit SCR.",
+      "interval_distance": {
+        "value": 200000,
+        "unit": "km"
+      }
+    }
+  ]
+}

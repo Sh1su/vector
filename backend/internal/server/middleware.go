@@ -17,7 +17,10 @@ const (
 	sessionCookie = "vectra_session"
 	csrfCookie    = "vectra_csrf"
 	csrfHeader    = "X-CSRF-Token"
+	mcpPath       = "/mcp"
 	apiPrefix     = "/api/v1"
+	// maxUploadBody ist die harte Obergrenze eines Multipart-Bodys (Datei + Felder).
+	maxUploadBody = 256 << 20
 )
 
 // publicPaths sind die Operationen mit `security: []` in der Spezifikation.
@@ -60,6 +63,9 @@ type statusWriter struct {
 
 func (s *statusWriter) WriteHeader(c int) { s.status = c; s.ResponseWriter.WriteHeader(c) }
 
+// Unwrap erlaubt http.ResponseController (Flush für Server-Sent Events).
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // withLogging protokolliert jede Anfrage ohne Inhalte (ADR-030).
 func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,16 +91,21 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(self), camera=(self)")
 		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }
 
-// withBodyLimit begrenzt JSON-Bodies auf 1 MiB.
+// withBodyLimit begrenzt JSON-Bodies auf 1 MiB; Datei-Uploads (multipart) prüft
+// das Modul Documents selbst gegen sein Größenlimit, hier gilt eine Obergrenze.
 func withBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		limit := int64(1 << 20)
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			limit = maxUploadBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -105,26 +116,21 @@ func withAuth(ids *identity.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, apiPrefix)
 		ctx := r.Context()
+		// API-Tokens (Bearer): für den MCP-Server und die REST-API. Die Scopes je
+		// Operation prüft scopeGuard (aus api/openapi.yaml erzeugt); kein CSRF nötig.
 		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-			// Persönliches API-Token: kein Cookie, kein CSRF (ADR-015).
-			info, ok, err := ids.ResolveApiToken(ctx, strings.TrimSpace(strings.TrimPrefix(h, "Bearer ")))
+			a, ok, err := ids.ResolveToken(ctx, strings.TrimPrefix(h, "Bearer "))
 			if err != nil {
 				problem.Write(w, err, requestID(r))
 				return
 			}
 			if !ok {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="vectra"`)
 				problem.Write(w, problem.Unauthorized(), requestID(r))
 				return
 			}
-			acc, err := ids.Account(ctx, info.AccountID)
-			if err != nil {
-				problem.Write(w, err, requestID(r))
-				return
-			}
-			isAdmin := acc.IsAdmin && contains(info.Scopes, "admin")
-			ctx = kernel.WithActor(ctx, kernel.Actor{AccountID: info.AccountID, IsAdmin: isAdmin, Kind: "api_token", RequestID: requestID(r),
-				Scopes: info.Scopes, VehicleIDs: info.VehicleIDs})
-			next.ServeHTTP(w, r.WithContext(ctx))
+			a.RequestID = requestID(r)
+			next.ServeHTTP(w, r.WithContext(kernel.WithActor(ctx, a)))
 			return
 		}
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
@@ -160,13 +166,4 @@ func withAuth(ids *identity.Service, next http.Handler) http.Handler {
 
 func unsafe(m string) bool {
 	return m == http.MethodPost || m == http.MethodPut || m == http.MethodPatch || m == http.MethodDelete
-}
-
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }

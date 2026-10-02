@@ -1,59 +1,36 @@
 package kernel
 
 import (
-	"math/big"
-	"strconv"
+	"math"
+	"regexp"
 )
 
-// MinorDigits liefert die Nachkommastellen einer Währung (ISO 4217, ADR-029).
+var reCurrency = regexp.MustCompile(`^[A-Z]{3}$`)
+
+// ValidCurrency prüft einen ISO-4217-Code (Form, ADR-029).
+func ValidCurrency(c string) bool { return reCurrency.MatchString(c) }
+
+// Währungen mit abweichender Anzahl Nachkommastellen (ISO 4217); sonst 2.
+var minorDigits = map[string]int{
+	"JPY": 0, "KRW": 0, "ISK": 0, "CLP": 0, "VND": 0, "HUF": 2, "PYG": 0, "UGX": 0, "XAF": 0, "XOF": 0, "XPF": 0, "RWF": 0, "KMF": 0, "GNF": 0, "DJF": 0, "VUV": 0,
+	"BHD": 3, "KWD": 3, "OMR": 3, "JOD": 3, "TND": 3, "LYD": 3, "IQD": 3,
+}
+
+// MinorDigits liefert die Nachkommastellen der kleinsten Einheit.
 func MinorDigits(currency string) int {
-	switch currency {
-	case "JPY", "KRW", "ISK", "CLP", "VND", "XAF", "XOF", "PYG", "UGX":
-		return 0
-	case "BHD", "KWD", "OMR", "JOD", "TND", "IQD", "LYD":
-		return 3
+	if d, ok := minorDigits[currency]; ok {
+		return d
 	}
 	return 2
 }
 
-// PriceTotal berechnet den Gesamtbetrag aus Preis pro Einheit und Menge (FU-07):
-// round_half_up(preis × menge × 10^Stellen). Die Menge wird exakt aus ihrem
-// kanonischen Wert in die Preiseinheit umgerechnet, bei gleicher Einheit aus der
-// Originaleingabe.
-func PriceTotal(price float64, currency, perUnit string, qty Quantity) (int64, error) {
-	p, ok := new(big.Rat).SetString(strconv.FormatFloat(price, 'f', -1, 64))
-	if !ok {
-		return 0, ErrUnknownUnit
-	}
-	var amount *big.Rat
-	if perUnit == qty.InputUnit {
-		amount, _ = new(big.Rat).SetString(qty.InputValue)
-	} else {
-		u, ok := inputUnits[perUnit]
-		if !ok || u.canonical != qty.CanonicalUnit {
-			return 0, ErrUnknownUnit
-		}
-		amount = new(big.Rat).Quo(new(big.Rat).SetInt64(qty.Canonical), u.factor)
-	}
-	if amount == nil {
-		return 0, ErrUnknownUnit
-	}
-	r := new(big.Rat).Mul(p, amount)
-	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(MinorDigits(currency))), nil)))
-	return RoundHalfUp(r), nil
+// MajorAmount rechnet einen Betrag in kleinster Einheit in Haupteinheiten um (nur Anzeige).
+func MajorAmount(minor int64, currency string) float64 {
+	return float64(minor) / math.Pow10(MinorDigits(currency))
 }
 
-// RoundHalfUp rundet kaufmännisch (bei .5 vom Nullpunkt weg).
-func RoundHalfUp(r *big.Rat) int64 {
-	num, den := new(big.Int).Set(r.Num()), r.Denom()
-	q, m := new(big.Int).QuoRem(num, den, new(big.Int))
-	twice := new(big.Int).Mul(new(big.Int).Abs(m), big.NewInt(2))
-	if twice.Cmp(den) >= 0 {
-		if num.Sign() < 0 {
-			q.Sub(q, big.NewInt(1))
-		} else {
-			q.Add(q, big.NewInt(1))
-		}
-	}
-	return q.Int64()
+// Money ist ein Geldbetrag in kleinster Einheit (API-Schema Money).
+type Money struct {
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
 }

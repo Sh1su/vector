@@ -17,19 +17,29 @@ sql:
       go: {package: store, out: internal/odometer/store, sql_package: pgx/v5}
   - engine: postgresql
     schema: migrations
-    queries: queries/fuel.sql
+    queries: queries/costs.sql
     gen:
-      go: {package: store, out: internal/fuel/store, sql_package: pgx/v5}
-  - engine: postgresql
-    schema: migrations
-    queries: queries/oil.sql
-    gen:
-      go: {package: store, out: internal/oil/store, sql_package: pgx/v5}
+      go: {package: store, out: internal/costs/store, sql_package: pgx/v5}
   - engine: postgresql
     schema: migrations
     queries: queries/maintenance.sql
     gen:
       go: {package: store, out: internal/maintenance/store, sql_package: pgx/v5}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/service.sql
+    gen:
+      go: {package: store, out: internal/servicehistory/store, sql_package: pgx/v5}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/trips.sql
+    gen:
+      go: {package: store, out: internal/trips/store, sql_package: pgx/v5}
+  - engine: postgresql
+    schema: migrations
+    queries: queries/documents.sql
+    gen:
+      go: {package: store, out: internal/documents/store, sql_package: pgx/v5}
   - engine: postgresql
     schema: migrations
     queries: queries/assistant.sql

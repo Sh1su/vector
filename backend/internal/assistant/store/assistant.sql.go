@@ -11,45 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const attachProposals = `-- name: AttachProposals :exec
-UPDATE assistant.proposal SET message_id = $1 WHERE id = ANY($2::uuid[])
-`
-
-type AttachProposalsParams struct {
-	MessageID pgtype.UUID
-	Ids       []pgtype.UUID
-}
-
-func (q *Queries) AttachProposals(ctx context.Context, arg AttachProposalsParams) error {
-	_, err := q.db.Exec(ctx, attachProposals, arg.MessageID, arg.Ids)
-	return err
-}
-
 const countRequestsSince = `-- name: CountRequestsSince :one
-SELECT count(*) FROM assistant.request_log WHERE account_id = $1 AND occurred_at >= $2
+SELECT count(*) FROM assistant.request_log WHERE account_id = $1 AND created_at >= $2
 `
 
 type CountRequestsSinceParams struct {
-	AccountID  pgtype.UUID
-	OccurredAt pgtype.Timestamptz
+	AccountID pgtype.UUID
+	CreatedAt pgtype.Timestamptz
 }
 
 func (q *Queries) CountRequestsSince(ctx context.Context, arg CountRequestsSinceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countRequestsSince, arg.AccountID, arg.OccurredAt)
+	row := q.db.QueryRow(ctx, countRequestsSince, arg.AccountID, arg.CreatedAt)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const decideProposal = `-- name: DecideProposal :one
-UPDATE assistant.proposal SET status = $2, result_id = $3, body = $4, decided_at = now() WHERE id = $1 AND status = 'pending' RETURNING id, conversation_id, message_id, account_id, vehicle_id, operation, body, anomalies, status, expires_at, result_id, created_at, decided_at
+UPDATE assistant.proposal SET status = $2, result_id = $3, anomalies = $4, body = $5, decided_at = now() WHERE id = $1 RETURNING id, account_id, conversation_id, vehicle_id, operation, summary, body, anomalies, status, expires_at, result_id, created_at, decided_at
 `
 
 type DecideProposalParams struct {
-	ID       pgtype.UUID
-	Status   string
-	ResultID pgtype.UUID
-	Body     []byte
+	ID        pgtype.UUID
+	Status    string
+	ResultID  pgtype.UUID
+	Anomalies []byte
+	Body      []byte
 }
 
 func (q *Queries) DecideProposal(ctx context.Context, arg DecideProposalParams) (AssistantProposal, error) {
@@ -57,16 +44,17 @@ func (q *Queries) DecideProposal(ctx context.Context, arg DecideProposalParams) 
 		arg.ID,
 		arg.Status,
 		arg.ResultID,
+		arg.Anomalies,
 		arg.Body,
 	)
 	var i AssistantProposal
 	err := row.Scan(
 		&i.ID,
-		&i.ConversationID,
-		&i.MessageID,
 		&i.AccountID,
+		&i.ConversationID,
 		&i.VehicleID,
 		&i.Operation,
+		&i.Summary,
 		&i.Body,
 		&i.Anomalies,
 		&i.Status,
@@ -76,6 +64,15 @@ func (q *Queries) DecideProposal(ctx context.Context, arg DecideProposalParams) 
 		&i.DecidedAt,
 	)
 	return i, err
+}
+
+const deleteConsent = `-- name: DeleteConsent :exec
+DELETE FROM assistant.consent WHERE account_id = $1
+`
+
+func (q *Queries) DeleteConsent(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteConsent, accountID)
+	return err
 }
 
 const deleteConversation = `-- name: DeleteConversation :execrows
@@ -95,16 +92,15 @@ func (q *Queries) DeleteConversation(ctx context.Context, arg DeleteConversation
 	return result.RowsAffected(), nil
 }
 
-const deleteOldConversations = `-- name: DeleteOldConversations :execrows
-DELETE FROM assistant.conversation WHERE updated_at < $1
+const getConsent = `-- name: GetConsent :one
+SELECT account_id, provider, given_at FROM assistant.consent WHERE account_id = $1
 `
 
-func (q *Queries) DeleteOldConversations(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOldConversations, updatedAt)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) GetConsent(ctx context.Context, accountID pgtype.UUID) (AssistantConsent, error) {
+	row := q.db.QueryRow(ctx, getConsent, accountID)
+	var i AssistantConsent
+	err := row.Scan(&i.AccountID, &i.Provider, &i.GivenAt)
+	return i, err
 }
 
 const getConversation = `-- name: GetConversation :one
@@ -131,7 +127,7 @@ func (q *Queries) GetConversation(ctx context.Context, arg GetConversationParams
 }
 
 const getProposal = `-- name: GetProposal :one
-SELECT id, conversation_id, message_id, account_id, vehicle_id, operation, body, anomalies, status, expires_at, result_id, created_at, decided_at FROM assistant.proposal WHERE id = $1 AND account_id = $2
+SELECT id, account_id, conversation_id, vehicle_id, operation, summary, body, anomalies, status, expires_at, result_id, created_at, decided_at FROM assistant.proposal WHERE id = $1 AND account_id = $2
 `
 
 type GetProposalParams struct {
@@ -144,11 +140,11 @@ func (q *Queries) GetProposal(ctx context.Context, arg GetProposalParams) (Assis
 	var i AssistantProposal
 	err := row.Scan(
 		&i.ID,
-		&i.ConversationID,
-		&i.MessageID,
 		&i.AccountID,
+		&i.ConversationID,
 		&i.VehicleID,
 		&i.Operation,
+		&i.Summary,
 		&i.Body,
 		&i.Anomalies,
 		&i.Status,
@@ -156,22 +152,6 @@ func (q *Queries) GetProposal(ctx context.Context, arg GetProposalParams) (Assis
 		&i.ResultID,
 		&i.CreatedAt,
 		&i.DecidedAt,
-	)
-	return i, err
-}
-
-const getUserState = `-- name: GetUserState :one
-SELECT account_id, enabled, consent_provider, consent_at FROM assistant.user_state WHERE account_id = $1
-`
-
-func (q *Queries) GetUserState(ctx context.Context, accountID pgtype.UUID) (AssistantUserState, error) {
-	row := q.db.QueryRow(ctx, getUserState, accountID)
-	var i AssistantUserState
-	err := row.Scan(
-		&i.AccountID,
-		&i.Enabled,
-		&i.ConsentProvider,
-		&i.ConsentAt,
 	)
 	return i, err
 }
@@ -207,7 +187,7 @@ func (q *Queries) InsertConversation(ctx context.Context, arg InsertConversation
 }
 
 const insertMessage = `-- name: InsertMessage :one
-INSERT INTO assistant.message (id, conversation_id, role, text, citations) VALUES ($1, $2, $3, $4, $5) RETURNING id, conversation_id, role, text, citations, created_at
+INSERT INTO assistant.message (id, conversation_id, role, text, proposal_ids) VALUES ($1, $2, $3, $4, $5) RETURNING id, conversation_id, role, text, proposal_ids, created_at
 `
 
 type InsertMessageParams struct {
@@ -215,7 +195,7 @@ type InsertMessageParams struct {
 	ConversationID pgtype.UUID
 	Role           string
 	Text           string
-	Citations      []byte
+	ProposalIds    []pgtype.UUID
 }
 
 func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (AssistantMessage, error) {
@@ -224,7 +204,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (A
 		arg.ConversationID,
 		arg.Role,
 		arg.Text,
-		arg.Citations,
+		arg.ProposalIds,
 	)
 	var i AssistantMessage
 	err := row.Scan(
@@ -232,47 +212,47 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (A
 		&i.ConversationID,
 		&i.Role,
 		&i.Text,
-		&i.Citations,
+		&i.ProposalIds,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const insertProposal = `-- name: InsertProposal :one
-INSERT INTO assistant.proposal (id, conversation_id, account_id, vehicle_id, operation, body, anomalies, status, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8) RETURNING id, conversation_id, message_id, account_id, vehicle_id, operation, body, anomalies, status, expires_at, result_id, created_at, decided_at
+INSERT INTO assistant.proposal (id, account_id, conversation_id, vehicle_id, operation, summary, body, status, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8) RETURNING id, account_id, conversation_id, vehicle_id, operation, summary, body, anomalies, status, expires_at, result_id, created_at, decided_at
 `
 
 type InsertProposalParams struct {
 	ID             pgtype.UUID
-	ConversationID pgtype.UUID
 	AccountID      pgtype.UUID
+	ConversationID pgtype.UUID
 	VehicleID      pgtype.UUID
 	Operation      string
+	Summary        string
 	Body           []byte
-	Anomalies      []byte
 	ExpiresAt      pgtype.Timestamptz
 }
 
 func (q *Queries) InsertProposal(ctx context.Context, arg InsertProposalParams) (AssistantProposal, error) {
 	row := q.db.QueryRow(ctx, insertProposal,
 		arg.ID,
-		arg.ConversationID,
 		arg.AccountID,
+		arg.ConversationID,
 		arg.VehicleID,
 		arg.Operation,
+		arg.Summary,
 		arg.Body,
-		arg.Anomalies,
 		arg.ExpiresAt,
 	)
 	var i AssistantProposal
 	err := row.Scan(
 		&i.ID,
-		&i.ConversationID,
-		&i.MessageID,
 		&i.AccountID,
+		&i.ConversationID,
 		&i.VehicleID,
 		&i.Operation,
+		&i.Summary,
 		&i.Body,
 		&i.Anomalies,
 		&i.Status,
@@ -285,8 +265,7 @@ func (q *Queries) InsertProposal(ctx context.Context, arg InsertProposalParams) 
 }
 
 const insertRequestLog = `-- name: InsertRequestLog :exec
-INSERT INTO assistant.request_log (id, account_id, provider, model, input_tokens, output_tokens, tools, outcome)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO assistant.request_log (id, account_id, provider, model, input_tokens, output_tokens, tools) VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertRequestLogParams struct {
@@ -294,10 +273,9 @@ type InsertRequestLogParams struct {
 	AccountID    pgtype.UUID
 	Provider     string
 	Model        string
-	InputTokens  int64
-	OutputTokens int64
+	InputTokens  int32
+	OutputTokens int32
 	Tools        []string
-	Outcome      string
 }
 
 func (q *Queries) InsertRequestLog(ctx context.Context, arg InsertRequestLogParams) error {
@@ -309,13 +287,12 @@ func (q *Queries) InsertRequestLog(ctx context.Context, arg InsertRequestLogPara
 		arg.InputTokens,
 		arg.OutputTokens,
 		arg.Tools,
-		arg.Outcome,
 	)
 	return err
 }
 
 const listConversations = `-- name: ListConversations :many
-SELECT id, account_id, vehicle_id, title, created_at, updated_at FROM assistant.conversation WHERE account_id = $1 ORDER BY updated_at DESC LIMIT 100
+SELECT id, account_id, vehicle_id, title, created_at, updated_at FROM assistant.conversation WHERE account_id = $1 ORDER BY updated_at DESC LIMIT 50
 `
 
 func (q *Queries) ListConversations(ctx context.Context, accountID pgtype.UUID) ([]AssistantConversation, error) {
@@ -346,7 +323,7 @@ func (q *Queries) ListConversations(ctx context.Context, accountID pgtype.UUID) 
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, conversation_id, role, text, citations, created_at FROM assistant.message WHERE conversation_id = $1 ORDER BY created_at, id
+SELECT id, conversation_id, role, text, proposal_ids, created_at FROM assistant.message WHERE conversation_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListMessages(ctx context.Context, conversationID pgtype.UUID) ([]AssistantMessage, error) {
@@ -363,7 +340,7 @@ func (q *Queries) ListMessages(ctx context.Context, conversationID pgtype.UUID) 
 			&i.ConversationID,
 			&i.Role,
 			&i.Text,
-			&i.Citations,
+			&i.ProposalIds,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -376,12 +353,17 @@ func (q *Queries) ListMessages(ctx context.Context, conversationID pgtype.UUID) 
 	return items, nil
 }
 
-const listProposalsForConversation = `-- name: ListProposalsForConversation :many
-SELECT id, conversation_id, message_id, account_id, vehicle_id, operation, body, anomalies, status, expires_at, result_id, created_at, decided_at FROM assistant.proposal WHERE conversation_id = $1 ORDER BY created_at
+const listProposals = `-- name: ListProposals :many
+SELECT id, account_id, conversation_id, vehicle_id, operation, summary, body, anomalies, status, expires_at, result_id, created_at, decided_at FROM assistant.proposal WHERE id = ANY($2::uuid[]) AND account_id = $1
 `
 
-func (q *Queries) ListProposalsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]AssistantProposal, error) {
-	rows, err := q.db.Query(ctx, listProposalsForConversation, conversationID)
+type ListProposalsParams struct {
+	AccountID pgtype.UUID
+	Ids       []pgtype.UUID
+}
+
+func (q *Queries) ListProposals(ctx context.Context, arg ListProposalsParams) ([]AssistantProposal, error) {
+	rows, err := q.db.Query(ctx, listProposals, arg.AccountID, arg.Ids)
 	if err != nil {
 		return nil, err
 	}
@@ -391,11 +373,11 @@ func (q *Queries) ListProposalsForConversation(ctx context.Context, conversation
 		var i AssistantProposal
 		if err := rows.Scan(
 			&i.ID,
-			&i.ConversationID,
-			&i.MessageID,
 			&i.AccountID,
+			&i.ConversationID,
 			&i.VehicleID,
 			&i.Operation,
+			&i.Summary,
 			&i.Body,
 			&i.Anomalies,
 			&i.Status,
@@ -414,6 +396,64 @@ func (q *Queries) ListProposalsForConversation(ctx context.Context, conversation
 	return items, nil
 }
 
+const lockProposal = `-- name: LockProposal :one
+SELECT id, account_id, conversation_id, vehicle_id, operation, summary, body, anomalies, status, expires_at, result_id, created_at, decided_at FROM assistant.proposal WHERE id = $1 AND account_id = $2 FOR UPDATE
+`
+
+type LockProposalParams struct {
+	ID        pgtype.UUID
+	AccountID pgtype.UUID
+}
+
+func (q *Queries) LockProposal(ctx context.Context, arg LockProposalParams) (AssistantProposal, error) {
+	row := q.db.QueryRow(ctx, lockProposal, arg.ID, arg.AccountID)
+	var i AssistantProposal
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.ConversationID,
+		&i.VehicleID,
+		&i.Operation,
+		&i.Summary,
+		&i.Body,
+		&i.Anomalies,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.ResultID,
+		&i.CreatedAt,
+		&i.DecidedAt,
+	)
+	return i, err
+}
+
+const purgeOldConversations = `-- name: PurgeOldConversations :exec
+DELETE FROM assistant.conversation WHERE account_id = $1 AND updated_at < $2
+`
+
+type PurgeOldConversationsParams struct {
+	AccountID pgtype.UUID
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) PurgeOldConversations(ctx context.Context, arg PurgeOldConversationsParams) error {
+	_, err := q.db.Exec(ctx, purgeOldConversations, arg.AccountID, arg.UpdatedAt)
+	return err
+}
+
+const setProposalAnomalies = `-- name: SetProposalAnomalies :exec
+UPDATE assistant.proposal SET anomalies = $2 WHERE id = $1
+`
+
+type SetProposalAnomaliesParams struct {
+	ID        pgtype.UUID
+	Anomalies []byte
+}
+
+func (q *Queries) SetProposalAnomalies(ctx context.Context, arg SetProposalAnomaliesParams) error {
+	_, err := q.db.Exec(ctx, setProposalAnomalies, arg.ID, arg.Anomalies)
+	return err
+}
+
 const touchConversation = `-- name: TouchConversation :exec
 UPDATE assistant.conversation SET updated_at = now(), title = COALESCE(title, $2) WHERE id = $1
 `
@@ -428,24 +468,20 @@ func (q *Queries) TouchConversation(ctx context.Context, arg TouchConversationPa
 	return err
 }
 
-const upsertUserState = `-- name: UpsertUserState :exec
-INSERT INTO assistant.user_state (account_id, enabled, consent_provider, consent_at) VALUES ($1, $2, $3, $4)
-ON CONFLICT (account_id) DO UPDATE SET enabled = EXCLUDED.enabled, consent_provider = EXCLUDED.consent_provider, consent_at = EXCLUDED.consent_at
+const upsertConsent = `-- name: UpsertConsent :one
+INSERT INTO assistant.consent (account_id, provider) VALUES ($1, $2)
+ON CONFLICT (account_id) DO UPDATE SET provider = EXCLUDED.provider, given_at = now()
+RETURNING account_id, provider, given_at
 `
 
-type UpsertUserStateParams struct {
-	AccountID       pgtype.UUID
-	Enabled         bool
-	ConsentProvider pgtype.Text
-	ConsentAt       pgtype.Timestamptz
+type UpsertConsentParams struct {
+	AccountID pgtype.UUID
+	Provider  string
 }
 
-func (q *Queries) UpsertUserState(ctx context.Context, arg UpsertUserStateParams) error {
-	_, err := q.db.Exec(ctx, upsertUserState,
-		arg.AccountID,
-		arg.Enabled,
-		arg.ConsentProvider,
-		arg.ConsentAt,
-	)
-	return err
+func (q *Queries) UpsertConsent(ctx context.Context, arg UpsertConsentParams) (AssistantConsent, error) {
+	row := q.db.QueryRow(ctx, upsertConsent, arg.AccountID, arg.Provider)
+	var i AssistantConsent
+	err := row.Scan(&i.AccountID, &i.Provider, &i.GivenAt)
+	return i, err
 }

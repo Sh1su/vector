@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"time"
 
@@ -9,19 +8,38 @@ import (
 
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
+	"github.com/sh1su/vector/backend/internal/vehicles"
 )
 
-// units liefert die Anzeigeeinheiten des Nutzers (ADR-007).
-func (s *Server) units(ctx context.Context, a kernel.Actor) kernel.Units {
-	st, err := s.d.Identity.Settings(ctx, a.AccountID)
-	if err != nil {
-		return kernel.UnitsFromSettings(nil)
+// dateP wandelt einen optionalen API-Datumsparameter in ein Kalenderdatum.
+func dateP(d *openapi_types.Date) *time.Time {
+	if d == nil {
+		return nil
 	}
-	return kernel.UnitsFromSettings(st)
+	t := kernel.Date(d.Time)
+	return &t
 }
 
-// splitPatch trennt einen Merge Patch von den Bestätigungsfeldern (ADR-010).
-func splitPatch(body any) ([]byte, []string, string, error) {
+func etag(version int) *string {
+	e := vehicles.ETag(version)
+	return &e
+}
+
+func loc(path string) *string {
+	l := apiPrefix + path
+	return &l
+}
+
+// bodyTo überführt einen generierten Request-Body in die Eingabe eines Service.
+func bodyTo(body, dst any) error {
+	if err := convert(body, dst); err != nil {
+		return problem.BadRequest("Der Request-Body ist ungültig.")
+	}
+	return nil
+}
+
+// patchOf serialisiert einen Merge-Patch-Body und trennt die Befundbestätigung ab.
+func patchOf(body any) ([]byte, []string, string, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, nil, "", problem.BadRequest("")
@@ -32,29 +50,15 @@ func splitPatch(body any) ([]byte, []string, string, error) {
 	}
 	var codes []string
 	var reason string
-	if v, ok := m["confirm_anomalies"]; ok {
-		_ = json.Unmarshal(v, &codes)
-	}
-	if v, ok := m["anomaly_reason"]; ok {
-		_ = json.Unmarshal(v, &reason)
-	}
+	_ = json.Unmarshal(m["confirm_anomalies"], &codes)
+	_ = json.Unmarshal(m["anomaly_reason"], &reason)
 	delete(m, "confirm_anomalies")
 	delete(m, "anomaly_reason")
 	patch, _ := json.Marshal(m)
 	return patch, codes, reason, nil
 }
 
-func datePtr(d *openapi_types.Date) *time.Time {
-	if d == nil {
-		return nil
-	}
-	t := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
-	return &t
-}
-
-func limitOf(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
+// page baut eine Seitenantwort {items, next_cursor} im generierten Typ.
+func page(items any, next *string, dst any) error {
+	return convert(map[string]any{"items": items, "next_cursor": next}, dst)
 }

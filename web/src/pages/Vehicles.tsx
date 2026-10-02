@@ -10,6 +10,7 @@ import { Button, Chip, Field, inputClass } from '../components/ui'
 import { fmtNumber } from '../lib/format'
 import { useCurrent } from '../lib/odometer'
 import { useApp, type Vehicle } from '../lib/state'
+import { VehiclePhoto } from '../components/VehiclePhoto'
 
 const roleLabel: Record<string, string> = { owner: 'Eigentümer', editor: 'Bearbeiter', viewer: 'Leser' }
 const carrierLabel: Record<string, string> = { petrol: 'Benzin', diesel: 'Diesel', lpg: 'Autogas', electricity: 'Strom' }
@@ -20,13 +21,13 @@ function VehicleCard({ v }: { v: Vehicle }) {
   const cur = useCurrent(v.id).data
   const status = v.status === 'active' ? { tone: 'ok' as const, icon: 'check' as const, text: 'Aktiv' } : { tone: 'neutral' as const, icon: 'info' as const, text: v.status === 'sold' ? 'Verkauft' : 'Archiviert' }
   return (
-    <button type="button" onClick={() => { setVehicleId(v.id); navigate('/') }}
-      className="flex flex-col overflow-hidden rounded-[16px] border border-line bg-card text-left text-text hover:border-teal">
-      <div className="relative flex h-[170px] w-full items-center justify-center bg-soft text-muted">
-        <Icon name="car" size={64} />
+    <div className="flex flex-col overflow-hidden rounded-[16px] border border-line bg-card text-left text-text hover:border-teal">
+      <div className="relative h-[170px] w-full">
+        <VehiclePhoto vehicle={v} />
         <span className="absolute top-3 left-3"><Chip tone={status.tone} icon={status.icon}>{status.text}</Chip></span>
       </div>
-      <div className="flex flex-col gap-3 px-4.5 py-4">
+      <button type="button" onClick={() => { setVehicleId(v.id); navigate('/') }} aria-label={`${v.display_name} öffnen`}
+        className="flex flex-col gap-3 px-4.5 py-4 text-left text-text">
         <div className="flex flex-col gap-0.5">
           <div className="font-display text-lg font-semibold">{v.display_name}</div>
           <div className="text-[13px] text-muted">{[v.license_plate, v.energy_carriers.map((c) => carrierLabel[c]).join(' / '), v.model_year ? `Baujahr ${v.model_year}` : ''].filter(Boolean).join(' · ')}</div>
@@ -36,8 +37,8 @@ function VehicleCard({ v }: { v: Vehicle }) {
             <span className="tabular font-semibold">{cur?.meter_value ? `${fmtNumber(cur.meter_value.canonical / 1000)} km` : 'kein Stand'}</span></div>
           <div className="flex items-center gap-1.5"><span className="text-muted"><Icon name="user" size={18} /></span>{roleLabel[v.my_role ?? 'viewer']}</div>
         </div>
-      </div>
-    </button>
+      </button>
+    </div>
   )
 }
 

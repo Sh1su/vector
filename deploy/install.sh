@@ -87,13 +87,14 @@ VECTRA_SETUP_TOKEN=$SETUP_TOKEN
 VECTRA_DOMAIN=$DOMAIN
 VECTRA_PORT=$PORT
 
-# Optional: KI-Assistent (siehe README, Abschnitt „KI-Assistent“). Leer = aus.
+# Optional: maximale Dateigröße für Uploads (Dokumente, Belege) in MB
+VECTRA_MAX_UPLOAD_MB=25
+
+# Optional: KI-Assistent mit Claude (Anthropic). Leer = aus. Schlüssel: https://console.anthropic.com
 VECTRA_ASSISTANT_PROVIDER=
 VECTRA_ASSISTANT_MODEL=
-VECTRA_ASSISTANT_API_KEY=
-VECTRA_ASSISTANT_BASE_URL=
-VECTRA_ASSISTANT_EXTERNAL=
-VECTRA_ASSISTANT_NAME=
+ANTHROPIC_API_KEY=
+VECTRA_ASSISTANT_WEB_SEARCH=true
 EOF
 umask 022
 
@@ -126,12 +127,13 @@ services:
       VECTRA_DATABASE_URL: postgres://vectra:${POSTGRES_PASSWORD}@postgres:5432/vectra
       VECTRA_SETUP_TOKEN: ${VECTRA_SETUP_TOKEN:-}
       VECTRA_COOKIE_SECURE: "__COOKIE_SECURE__"
+      VECTRA_MAX_UPLOAD_MB: ${VECTRA_MAX_UPLOAD_MB:-25}
       VECTRA_ASSISTANT_PROVIDER: ${VECTRA_ASSISTANT_PROVIDER:-}
       VECTRA_ASSISTANT_MODEL: ${VECTRA_ASSISTANT_MODEL:-}
-      VECTRA_ASSISTANT_BASE_URL: ${VECTRA_ASSISTANT_BASE_URL:-}
-      VECTRA_ASSISTANT_API_KEY: ${VECTRA_ASSISTANT_API_KEY:-}
-      VECTRA_ASSISTANT_EXTERNAL: ${VECTRA_ASSISTANT_EXTERNAL:-}
-      VECTRA_ASSISTANT_NAME: ${VECTRA_ASSISTANT_NAME:-}
+      VECTRA_ASSISTANT_WEB_SEARCH: ${VECTRA_ASSISTANT_WEB_SEARCH:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - files:/data   # Dokumente und Bilder, ins Backup aufnehmen
 __PORTS__    read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -139,6 +141,7 @@ __PORTS__    read_only: true
 __CADDY__
 volumes:
   pgdata:
+  files:
 __CADDY_VOLUMES__
 EOF
 

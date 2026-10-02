@@ -2,14 +2,12 @@ package maintenance
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sh1su/vector/backend/internal/identity"
@@ -17,8 +15,8 @@ import (
 	"github.com/sh1su/vector/backend/internal/maintenance/store"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/platform/audit"
-	"github.com/sh1su/vector/backend/internal/platform/db"
-	"github.com/sh1su/vector/backend/internal/platform/pg"
+	"github.com/sh1su/vector/backend/internal/platform/mergepatch"
+	pg "github.com/sh1su/vector/backend/internal/platform/pgconv"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 )
@@ -28,48 +26,50 @@ type Service struct {
 	pool *pgxpool.Pool
 	odo  *odometer.Service
 	Now  func() time.Time
-	// UserSettings und InstallSettings liefern die Schwellen-Vorgaben (MA-05).
-	UserSettings    func(ctx context.Context, accountID uuid.UUID) (map[string]any, error)
-	InstallSettings func(ctx context.Context) (map[string]any, error)
+	// OwnerSettings liefert die Einstellungen des Fahrzeughalters; deren maintenance_thresholds
+	// ersetzen die Installationsvorgabe (MA-05: Definition → Halter → Installation).
+	OwnerSettings func(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) map[string]any
 }
 
 func NewService(pool *pgxpool.Pool, odo *odometer.Service) *Service {
 	return &Service{pool: pool, odo: odo, Now: time.Now}
 }
 
-// ThresholdInput entspricht dem Schema MaintenanceThresholds.
-type ThresholdInput struct {
-	UpcomingDays     *int        `json:"upcoming_days"`
-	DueDays          *int        `json:"due_days"`
-	UpcomingDistance *vehicles.Q `json:"upcoming_distance"`
-	DueDistance      *vehicles.Q `json:"due_distance"`
+var categories = map[string]bool{"service": true, "legal_inspection": true, "tires": true, "fluids": true, "brakes": true, "filters": true, "other": true}
+
+// ThresholdsInput entspricht dem API-Schema MaintenanceThresholds.
+type ThresholdsInput struct {
+	UpcomingDays     *int        `json:"upcoming_days,omitempty"`
+	DueDays          *int        `json:"due_days,omitempty"`
+	UpcomingDistance *vehicles.Q `json:"upcoming_distance,omitempty"`
+	DueDistance      *vehicles.Q `json:"due_distance,omitempty"`
 }
 
-// Input sind die änderbaren Felder einer Definition (JSON-Namen wie in der API).
-type Input struct {
-	Title                   string         `json:"title"`
-	Description             *string        `json:"description"`
-	Category                string         `json:"category"`
-	ManufacturerRecommended bool           `json:"manufacturer_recommended"`
-	SourceDocumentID        *uuid.UUID     `json:"source_document_id"`
-	SourcePage              *int           `json:"source_page"`
-	ScheduleMode            string         `json:"schedule_mode"`
-	IntervalMonths          *int           `json:"interval_months"`
-	IntervalDays            *int           `json:"interval_days"`
-	IntervalDistance        *vehicles.Q    `json:"interval_distance"`
-	AnchorDate              *string        `json:"anchor_date"`
-	AnchorOdometer          *vehicles.Q    `json:"anchor_odometer"`
-	DueDateOnce             *string        `json:"due_date_once"`
-	DueOdometerOnce         *vehicles.Q    `json:"due_odometer_once"`
-	Thresholds              ThresholdInput `json:"thresholds"`
-	Active                  *bool          `json:"active"`
-	Note                    string         `json:"note"`
+// ItemInput sind die änderbaren Felder einer Definition (JSON wie API).
+type ItemInput struct {
+	Title                   string          `json:"title"`
+	Description             *string         `json:"description,omitempty"`
+	Category                string          `json:"category"`
+	ManufacturerRecommended bool            `json:"manufacturer_recommended"`
+	SourceDocumentID        *uuid.UUID      `json:"source_document_id,omitempty"`
+	SourcePage              *int            `json:"source_page,omitempty"`
+	ScheduleMode            string          `json:"schedule_mode"`
+	IntervalMonths          *int            `json:"interval_months,omitempty"`
+	IntervalDays            *int            `json:"interval_days,omitempty"`
+	IntervalDistance        *vehicles.Q     `json:"interval_distance,omitempty"`
+	AnchorDate              *string         `json:"anchor_date,omitempty"`
+	AnchorOdometer          *vehicles.Q     `json:"anchor_odometer,omitempty"`
+	DueDateOnce             *string         `json:"due_date_once,omitempty"`
+	DueOdometerOnce         *vehicles.Q     `json:"due_odometer_once,omitempty"`
+	Thresholds              ThresholdsInput `json:"thresholds"`
+	Active                  *bool           `json:"active,omitempty"`
+	Note                    string          `json:"note"`
 }
 
-// StatusView entspricht dem Schema DueStatus.
-type StatusView struct {
+// DueStatusView entspricht dem API-Schema DueStatus.
+type DueStatusView struct {
 	ItemID            uuid.UUID              `json:"item_id"`
-	VehicleID         uuid.UUID              `json:"-"`
+	VehicleID         uuid.UUID              `json:"vehicle_id"`
 	Title             string                 `json:"title"`
 	Level             string                 `json:"level"`
 	ReasonTrigger     *string                `json:"reason_trigger"`
@@ -79,25 +79,16 @@ type StatusView struct {
 	DistanceRemaining *kernel.DisplayValue   `json:"distance_remaining"`
 	EstimatedDueDate  *string                `json:"estimated_due_date"`
 	Estimated         bool                   `json:"estimated"`
-	estimated         *time.Time
 }
 
-// View entspricht dem Schema MaintenanceItem.
-type View struct {
-	ID         uuid.UUID `json:"id"`
-	Version    int       `json:"version"`
-	VehicleID  uuid.UUID `json:"vehicle_id"`
-	CreatedAt  time.Time `json:"created_at"`
-	CreatedBy  uuid.UUID `json:"created_by"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	UpdatedBy  uuid.UUID `json:"updated_by"`
-	RecordedAt time.Time `json:"recorded_at"`
-	Origin     string    `json:"origin"`
-	Input
-	Status StatusView `json:"status"`
+// ItemView entspricht dem API-Schema MaintenanceItem.
+type ItemView struct {
+	kernel.EntityMeta
+	ItemInput
+	Status DueStatusView `json:"status"`
 }
 
-// CompletionView entspricht dem Schema MaintenanceCompletion.
+// CompletionView entspricht dem API-Schema MaintenanceCompletion.
 type CompletionView struct {
 	ID                uuid.UUID   `json:"id"`
 	Kind              string      `json:"kind"`
@@ -107,170 +98,197 @@ type CompletionView struct {
 	Reason            *string     `json:"reason"`
 }
 
-type inputs struct {
-	IntervalDistance *vehicles.Q `json:"interval_distance,omitempty"`
-	AnchorOdometer   *vehicles.Q `json:"anchor_odometer,omitempty"`
-	DueOdometerOnce  *vehicles.Q `json:"due_odometer_once,omitempty"`
-	UpcomingDistance *vehicles.Q `json:"upcoming_distance,omitempty"`
-	DueDistance      *vehicles.Q `json:"due_distance,omitempty"`
-}
-
-type record struct {
-	in                                      Input
-	intervalDist, anchorTotal, dueTotalOnce pgtype.Int8
-	upcomingDist, dueDist                   pgtype.Int8
-	anchorDate, dueDateOnce                 pgtype.Date
-}
-
-var categories = map[string]bool{"service": true, "legal_inspection": true, "tires": true, "fluids": true, "brakes": true, "filters": true, "other": true}
-
-func allowedUnit(meter, unit string) bool {
-	if meter == odometer.MeterEngineHours {
-		return unit == "h" || unit == "s"
+func dateStr(d *time.Time) *string {
+	if d == nil {
+		return nil
 	}
-	return unit == "km" || unit == "mi" || unit == "m"
+	s := kernel.FormatDate(*d)
+	return &s
 }
 
-func normalize(meta vehicles.Meta, in Input) (record, error) {
+// qty rechnet einen kanonischen Wert in die gespeicherte Eingabeeinheit zurück.
+func qty(v *int64, unit string) *vehicles.Q {
+	if v == nil {
+		return nil
+	}
+	f, err := kernel.FromCanonical(*v, unit)
+	if err != nil {
+		return nil
+	}
+	return &vehicles.Q{Value: kernel.Round(f, 3), Unit: unit}
+}
+
+func itemInput(r store.MaintenanceItem) ItemInput {
+	active := r.Active
+	u := r.DistanceUnit
+	return ItemInput{Title: r.Title, Description: pg.TP(r.Description), Category: r.Category, ManufacturerRecommended: r.ManufacturerRecommended,
+		SourceDocumentID: pg.IDP(r.SourceDocumentID), SourcePage: pg.I4P(r.SourcePage), ScheduleMode: r.ScheduleMode,
+		IntervalMonths: pg.I4P(r.IntervalMonths), IntervalDays: pg.I4P(r.IntervalDays), IntervalDistance: qty(pg.I8P(r.IntervalDistance), u),
+		AnchorDate: dateStr(pg.DateP(r.AnchorDate)), AnchorOdometer: qty(pg.I8P(r.AnchorTotal), u), DueDateOnce: dateStr(pg.DateP(r.DueDateOnce)),
+		DueOdometerOnce: qty(pg.I8P(r.DueTotalOnce), u),
+		Thresholds: ThresholdsInput{UpcomingDays: pg.I4P(r.UpcomingDays), DueDays: pg.I4P(r.DueDays), UpcomingDistance: qty(pg.I8P(r.UpcomingDistance), u),
+			DueDistance: qty(pg.I8P(r.DueDistance), u)},
+		Active: &active, Note: r.Note}
+}
+
+func meta(r store.MaintenanceItem) kernel.EntityMeta {
+	upd, rec, by := r.UpdatedAt.Time, r.RecordedAt.Time, pg.ID(r.UpdatedBy)
+	return kernel.EntityMeta{ID: pg.ID(r.ID), Version: int(r.Version), VehicleID: pg.ID(r.VehicleID), CreatedAt: r.CreatedAt.Time,
+		CreatedBy: pg.ID(r.CreatedBy), UpdatedAt: &upd, UpdatedBy: &by, RecordedAt: &rec, Origin: r.Origin}
+}
+
+func domainItem(r store.MaintenanceItem, base Thresholds) Item {
+	it := Item{Mode: r.ScheduleMode, AnchorDate: pg.DateP(r.AnchorDate), AnchorTotal: pg.I8P(r.AnchorTotal), DueDateOnce: pg.DateP(r.DueDateOnce),
+		DueTotalOnce: pg.I8P(r.DueTotalOnce), Thresholds: base}
+	if v := pg.I4P(r.IntervalMonths); v != nil {
+		it.Months = *v
+	}
+	if v := pg.I4P(r.IntervalDays); v != nil {
+		it.Days = *v
+	}
+	if v := pg.I8P(r.IntervalDistance); v != nil {
+		it.Distance = *v
+	}
+	// MA-05: Schwellen der Definition, sonst Vorgabe – nie über Definitionen hinweg
+	if v := pg.I4P(r.UpcomingDays); v != nil {
+		it.Thresholds.UpcomingDays = *v
+	}
+	if v := pg.I4P(r.DueDays); v != nil {
+		it.Thresholds.DueDays = *v
+	}
+	if v := pg.I8P(r.UpcomingDistance); v != nil {
+		it.Thresholds.UpcomingDistance = *v
+	}
+	if v := pg.I8P(r.DueDistance); v != nil {
+		it.Thresholds.DueDistance = *v
+	}
+	return it
+}
+
+// parsed ist eine validierte Definition in Speicherform.
+type parsed struct {
+	intervalDistance, anchorTotal, dueTotalOnce, upcomingDistance, dueDistance *int64
+	anchorDate, dueDateOnce                                                    *time.Time
+	unit                                                                       string
+}
+
+func (in *ItemInput) validate(meta vehicles.Meta) (parsed, error) {
 	var errs []problem.FieldError
 	add := func(p, c, m string) { errs = append(errs, problem.FieldError{Pointer: p, Code: c, Message: m}) }
+	out := parsed{unit: "km"}
+	if meta.UsageMeter == odometer.MeterEngineHours {
+		out.unit = "h"
+	}
 	in.Title = strings.TrimSpace(in.Title)
-	r := record{in: in}
 	if n := len([]rune(in.Title)); n < 1 || n > 200 {
 		add("/title", "length", "1–200 Zeichen")
 	}
 	if !categories[in.Category] {
 		add("/category", "enum", "")
 	}
-	if in.SourceDocumentID != nil {
-		add("/source_document_id", "not_found", "Das Dokument existiert nicht.")
-	}
-	dist := func(q *vehicles.Q, ptr string, positive bool) pgtype.Int8 {
-		if q == nil {
-			return pgtype.Int8{}
-		}
-		if !allowedUnit(meta.UsageMeter, q.Unit) {
-			add(ptr+"/unit", "unit", "Einheit passt nicht zur Zählergröße des Fahrzeugs (I-MA-4).")
-			return pgtype.Int8{}
-		}
-		c, err := kernel.ToCanonical(q.Value, q.Unit)
-		if err != nil || c.Canonical < 0 || (positive && c.Canonical == 0) {
-			add(ptr+"/value", "range", "")
-			return pgtype.Int8{}
-		}
-		return pgtype.Int8{Int64: c.Canonical, Valid: true}
-	}
-	date := func(s *string, ptr string) pgtype.Date {
-		if s == nil || *s == "" {
-			return pgtype.Date{}
-		}
-		t, err := time.Parse("2006-01-02", *s)
-		if err != nil {
-			add(ptr, "date", "")
-			return pgtype.Date{}
-		}
-		return pgtype.Date{Time: t, Valid: true}
-	}
-	r.intervalDist = dist(in.IntervalDistance, "/interval_distance", true)
-	r.anchorTotal = dist(in.AnchorOdometer, "/anchor_odometer", false)
-	r.dueTotalOnce = dist(in.DueOdometerOnce, "/due_odometer_once", false)
-	r.upcomingDist = dist(in.Thresholds.UpcomingDistance, "/thresholds/upcoming_distance", false)
-	r.dueDist = dist(in.Thresholds.DueDistance, "/thresholds/due_distance", false)
-	r.anchorDate = date(in.AnchorDate, "/anchor_date")
-	r.dueDateOnce = date(in.DueDateOnce, "/due_date_once")
-	if in.IntervalMonths != nil && *in.IntervalMonths <= 0 {
-		add("/interval_months", "range", "")
-	}
-	if in.IntervalDays != nil && *in.IntervalDays <= 0 {
-		add("/interval_days", "range", "")
+	switch in.ScheduleMode {
+	case ModeOnce, ModeFromLast, ModeFixedGrid:
+	default:
+		add("/schedule_mode", "enum", "")
 	}
 	if in.IntervalMonths != nil && in.IntervalDays != nil {
-		add("/interval_days", "exclusive", "Höchstens Monate oder Tage angeben.")
+		add("/interval_days", "one_of", "Höchstens eines von Monaten oder Tagen.")
 	}
-	for _, t := range []struct {
-		p string
-		v *int
-	}{{"/thresholds/upcoming_days", in.Thresholds.UpcomingDays}, {"/thresholds/due_days", in.Thresholds.DueDays}} {
-		if t.v != nil && *t.v < 0 {
-			add(t.p, "range", "")
+	for p, v := range map[string]*int{"/interval_months": in.IntervalMonths, "/interval_days": in.IntervalDays} {
+		if v != nil && *v <= 0 {
+			add(p, "range", "Intervall muss größer als 0 sein (I-MA-2).")
+		}
+	}
+	unitSet := false
+	dist := func(p string, q *vehicles.Q) *int64 {
+		if q == nil {
+			return nil
+		}
+		ok := q.Unit == "km" || q.Unit == "mi" || q.Unit == "m"
+		if meta.UsageMeter == odometer.MeterEngineHours {
+			ok = q.Unit == "h" || q.Unit == "s"
+		}
+		if !ok {
+			add(p+"/unit", "unit", "Einheit passt nicht zur Zählergröße des Fahrzeugs (I-MA-4).")
+			return nil
+		}
+		c, err := kernel.ToCanonical(q.Value, q.Unit)
+		if err != nil || q.Value < 0 {
+			add(p+"/value", "range", "")
+			return nil
+		}
+		if !unitSet && q.Unit != "m" && q.Unit != "s" {
+			out.unit, unitSet = q.Unit, true
+		}
+		return &c.Canonical
+	}
+	out.intervalDistance = dist("/interval_distance", in.IntervalDistance)
+	if out.intervalDistance != nil && *out.intervalDistance <= 0 {
+		add("/interval_distance/value", "range", "Intervall muss größer als 0 sein (I-MA-2).")
+	}
+	out.anchorTotal = dist("/anchor_odometer", in.AnchorOdometer)
+	out.dueTotalOnce = dist("/due_odometer_once", in.DueOdometerOnce)
+	out.upcomingDistance = dist("/thresholds/upcoming_distance", in.Thresholds.UpcomingDistance)
+	out.dueDistance = dist("/thresholds/due_distance", in.Thresholds.DueDistance)
+	date := func(p string, s *string) *time.Time {
+		if s == nil {
+			return nil
+		}
+		d, err := kernel.ParseDate(*s)
+		if err != nil {
+			add(p, "date", "")
+			return nil
+		}
+		return &d
+	}
+	out.anchorDate = date("/anchor_date", in.AnchorDate)
+	out.dueDateOnce = date("/due_date_once", in.DueDateOnce)
+	for p, v := range map[string]*int{"/thresholds/upcoming_days": in.Thresholds.UpcomingDays, "/thresholds/due_days": in.Thresholds.DueDays} {
+		if v != nil && *v < 0 {
+			add(p, "range", "")
 		}
 	}
 	if in.SourcePage != nil && *in.SourcePage < 1 {
 		add("/source_page", "range", "")
 	}
+	hasTime := in.IntervalMonths != nil || in.IntervalDays != nil
+	// I-MA-1: mindestens ein Auslöser
 	switch in.ScheduleMode {
 	case ModeOnce:
-		if !r.dueDateOnce.Valid && !r.dueTotalOnce.Valid {
-			add("/due_date_once", "required", "Einmalige Aufgaben brauchen ein Fälligkeitsdatum oder einen Fälligkeitsstand (I-MA-1).")
+		if in.DueDateOnce == nil && in.DueOdometerOnce == nil {
+			add("/due_date_once", "required", "Fälligkeitsdatum oder -stand angeben (I-MA-1).")
 		}
-		if in.IntervalMonths != nil || in.IntervalDays != nil || in.IntervalDistance != nil {
-			add("/schedule_mode", "intervals_not_allowed", "Einmalige Aufgaben haben kein Intervall.")
+	case ModeFromLast, ModeFixedGrid:
+		if !hasTime && in.IntervalDistance == nil {
+			add("/interval_months", "required", "Zeit- oder Distanzintervall angeben (I-MA-1).")
 		}
-	case ModeFromLast, ModeGrid:
-		if in.IntervalMonths == nil && in.IntervalDays == nil && in.IntervalDistance == nil {
-			add("/interval_months", "required", "Mindestens ein Zeit- oder Distanzintervall angeben (I-MA-1).")
+		if in.ScheduleMode == ModeFixedGrid {
+			if hasTime && in.AnchorDate == nil {
+				add("/anchor_date", "required", "Festes Raster braucht ein Startdatum.")
+			}
+			if in.IntervalDistance != nil && in.AnchorOdometer == nil {
+				add("/anchor_odometer", "required", "Festes Raster braucht einen Startstand.")
+			}
 		}
-		if in.ScheduleMode == ModeGrid && in.IntervalDistance != nil && in.AnchorOdometer == nil {
-			add("/anchor_odometer", "required", "Ein festes Raster nach Distanz braucht einen Startstand.")
-		}
-		if in.ScheduleMode == ModeGrid && (in.IntervalMonths != nil || in.IntervalDays != nil) && in.AnchorDate == nil {
-			add("/anchor_date", "required", "Ein festes Raster nach Zeit braucht ein Startdatum.")
-		}
-	default:
-		add("/schedule_mode", "enum", "")
+	}
+	if in.Description != nil && len([]rune(*in.Description)) > 5000 {
+		add("/description", "length", "")
+	}
+	if in.Active == nil {
+		t := true
+		in.Active = &t
 	}
 	if len(errs) > 0 {
-		return r, problem.Validation(errs...)
+		return out, problem.Validation(errs...)
 	}
-	return r, nil
+	return out, nil
 }
 
-func (r record) inputsJSON() []byte {
-	b, _ := json.Marshal(inputs{IntervalDistance: r.in.IntervalDistance, AnchorOdometer: r.in.AnchorOdometer, DueOdometerOnce: r.in.DueOdometerOnce,
-		UpcomingDistance: r.in.Thresholds.UpcomingDistance, DueDistance: r.in.Thresholds.DueDistance})
-	return b
-}
-
-func i4(p *int) pgtype.Int4 {
-	if p == nil {
-		return pgtype.Int4{}
-	}
-	return pgtype.Int4{Int32: int32(*p), Valid: true}
-}
-
-func i4p(v pgtype.Int4) *int {
-	if !v.Valid {
-		return nil
-	}
-	i := int(v.Int32)
-	return &i
-}
-
-func datePtr(d pgtype.Date) *string {
-	if !d.Valid {
-		return nil
-	}
-	s := d.Time.Format("2006-01-02")
-	return &s
-}
-
-func inputOf(r store.MaintenanceItem) Input {
-	var ins inputs
-	_ = json.Unmarshal(r.Inputs, &ins)
-	active := r.Active
-	return Input{Title: r.Title, Description: pg.TextPtr(r.Description), Category: r.Category, ManufacturerRecommended: r.ManufacturerRecommended,
-		SourceDocumentID: pg.UUIDPtr(r.SourceDocumentID), SourcePage: i4p(r.SourcePage), ScheduleMode: r.ScheduleMode,
-		IntervalMonths: i4p(r.IntervalMonths), IntervalDays: i4p(r.IntervalDays), IntervalDistance: ins.IntervalDistance,
-		AnchorDate: datePtr(r.AnchorDate), AnchorOdometer: ins.AnchorOdometer, DueDateOnce: datePtr(r.DueDateOnce), DueOdometerOnce: ins.DueOdometerOnce,
-		Thresholds: ThresholdInput{UpcomingDays: i4p(r.UpcomingDays), DueDays: i4p(r.DueDays), UpcomingDistance: ins.UpcomingDistance, DueDistance: ins.DueDistance},
-		Active:     &active, Note: r.Note}
-}
-
-// Create legt eine Definition an (DefineItem); idempotent mit Client-ID.
-func (s *Service) Create(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, id *uuid.UUID, in Input) (View, bool, error) {
-	var out View
+// CreateItem legt eine Definition an.
+func (s *Service) CreateItem(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, id *uuid.UUID, in ItemInput) (ItemView, bool, error) {
+	var out ItemView
 	created := true
-	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := identity.Authorize(ctx, tx, actor, vehicleID, identity.RoleEditor); err != nil {
 			return err
 		}
@@ -278,461 +296,380 @@ func (s *Service) Create(ctx context.Context, actor kernel.Actor, vehicleID uuid
 		if err != nil {
 			return err
 		}
+		p, err := in.validate(meta)
+		if err != nil {
+			return err
+		}
 		q := store.New(tx)
 		iid := kernel.NewID()
 		if id != nil {
 			iid = *id
-			ex, err := q.GetItemAny(ctx, pg.U(iid))
-			if err == nil {
-				if uuid.UUID(ex.VehicleID.Bytes) == vehicleID && !ex.DeletedAt.Valid && ex.Title == strings.TrimSpace(in.Title) && ex.ScheduleMode == in.ScheduleMode {
+			if ex, err := q.GetItem(ctx, pg.U(iid)); err == nil {
+				if pg.ID(ex.VehicleID) == vehicleID && ex.Title == in.Title && ex.ScheduleMode == in.ScheduleMode {
+					out, err = s.view(ctx, tx, ex)
 					created = false
-					out, err = s.viewOne(ctx, tx, actor, ex)
 					return err
 				}
-				return problem.Conflict("Eine Wartung mit dieser ID existiert mit anderem Inhalt.")
+				return problem.Conflict("Eine Wartungsdefinition mit dieser ID existiert mit anderem Inhalt.")
 			} else if !errors.Is(err, pgx.ErrNoRows) {
 				return err
 			}
 		}
-		r, err := normalize(meta, in)
+		row, err := q.InsertItem(ctx, store.InsertItemParams{ID: pg.U(iid), VehicleID: pg.U(vehicleID), Title: in.Title, Description: pg.T(in.Description),
+			Category: in.Category, ManufacturerRecommended: in.ManufacturerRecommended, SourceDocumentID: pg.UP(in.SourceDocumentID),
+			SourcePage: pg.I4(in.SourcePage), ScheduleMode: in.ScheduleMode, IntervalMonths: pg.I4(in.IntervalMonths), IntervalDays: pg.I4(in.IntervalDays),
+			IntervalDistance: pg.I8(p.intervalDistance), AnchorDate: pg.DP(p.anchorDate), AnchorTotal: pg.I8(p.anchorTotal), DueDateOnce: pg.DP(p.dueDateOnce),
+			DueTotalOnce: pg.I8(p.dueTotalOnce), UpcomingDays: pg.I4(in.Thresholds.UpcomingDays), DueDays: pg.I4(in.Thresholds.DueDays),
+			UpcomingDistance: pg.I8(p.upcomingDistance), DueDistance: pg.I8(p.dueDistance), DistanceUnit: p.unit, Active: *in.Active, Note: in.Note,
+			Origin: kernel.OriginOf(actor), CreatedBy: pg.U(actor.AccountID)})
 		if err != nil {
 			return err
 		}
-		active := in.Active == nil || *in.Active
-		row, err := q.InsertItem(ctx, store.InsertItemParams{ID: pg.U(iid), VehicleID: pg.U(vehicleID), Title: r.in.Title, Description: pg.Text(in.Description),
-			Category: in.Category, ManufacturerRecommended: in.ManufacturerRecommended, SourceDocumentID: pg.Up(in.SourceDocumentID), SourcePage: i4(in.SourcePage),
-			ScheduleMode: in.ScheduleMode, IntervalMonths: i4(in.IntervalMonths), IntervalDays: i4(in.IntervalDays), IntervalDistance: r.intervalDist,
-			AnchorDate: r.anchorDate, AnchorTotal: r.anchorTotal, DueDateOnce: r.dueDateOnce, DueTotalOnce: r.dueTotalOnce,
-			UpcomingDays: i4(in.Thresholds.UpcomingDays), DueDays: i4(in.Thresholds.DueDays), UpcomingDistance: r.upcomingDist, DueDistance: r.dueDist,
-			Inputs: r.inputsJSON(), Active: active, Note: in.Note, Origin: odometer.OriginOf(actor), CreatedBy: pg.U(actor.AccountID)})
-		if err != nil {
+		if out, err = s.view(ctx, tx, row); err != nil {
 			return err
 		}
-		if err := audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_defined", VehicleID: &vehicleID, ObjectType: "maintenance_item",
-			ObjectID: iid, Changes: map[string]any{"title": r.in.Title, "mode": in.ScheduleMode}}); err != nil {
-			return err
-		}
-		out, err = s.viewOne(ctx, tx, actor, row)
-		return err
+		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_defined", VehicleID: &vehicleID, ObjectType: "maintenance_item", ObjectID: iid})
 	})
 	return out, created, err
 }
 
-func (s *Service) loadItem(ctx context.Context, q store.DBTX, actor kernel.Actor, vehicleID, itemID uuid.UUID, role string) (store.MaintenanceItem, error) {
-	row, err := store.New(q).GetItem(ctx, pg.U(itemID))
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && uuid.UUID(row.VehicleID.Bytes) != vehicleID) {
-		return row, problem.NotFound()
+func loadItem(ctx context.Context, db store.DBTX, actor kernel.Actor, vehicleID, id uuid.UUID, need string) (store.MaintenanceItem, error) {
+	r, err := store.New(db).GetItem(ctx, pg.U(id))
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (pg.ID(r.VehicleID) != vehicleID || r.DeletedAt.Valid)) {
+		return r, problem.NotFound()
 	}
 	if err != nil {
-		return row, err
+		return r, err
 	}
-	_, err = identity.Authorize(ctx, q, actor, uuid.UUID(row.VehicleID.Bytes), role)
-	return row, err
+	_, err = identity.Authorize(ctx, db, actor, pg.ID(r.VehicleID), need)
+	return r, err
 }
 
-// Update ändert eine Definition (JSON Merge Patch, If-Match).
-func (s *Service) Update(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID, ifMatch string, patch []byte) (View, error) {
+// GetItem liest eine Definition mit aktueller Fälligkeit.
+func (s *Service) GetItem(ctx context.Context, actor kernel.Actor, vehicleID, id uuid.UUID) (ItemView, error) {
+	r, err := loadItem(ctx, s.pool, actor, vehicleID, id, identity.RoleViewer)
+	if err != nil {
+		return ItemView{}, err
+	}
+	return s.view(ctx, s.pool, r)
+}
+
+// UpdateItem ändert eine Definition (Merge Patch, If-Match).
+func (s *Service) UpdateItem(ctx context.Context, actor kernel.Actor, vehicleID, id uuid.UUID, ifMatch string, patch []byte) (ItemView, error) {
 	version, err := vehicles.ParseETag(ifMatch)
 	if err != nil {
-		return View{}, err
+		return ItemView{}, err
 	}
-	var out View
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		row, err := s.loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
+	var out ItemView
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		cur, err := loadItem(ctx, tx, actor, vehicleID, id, identity.RoleEditor)
 		if err != nil {
 			return err
 		}
-		if int(row.Version) != version {
-			cur, _ := s.viewOne(ctx, tx, actor, row)
-			return problem.PreconditionFailed(cur)
+		if int(cur.Version) != version {
+			v, _ := s.view(ctx, tx, cur)
+			return problem.PreconditionFailed(v)
+		}
+		var in ItemInput
+		if err := mergepatch.Apply(itemInput(cur), patch, &in); err != nil {
+			return problem.BadRequest("Ungültiger Merge Patch.")
+		}
+		if mergepatch.Has(patch, "interval_days") && in.IntervalDays != nil && !mergepatch.Has(patch, "interval_months") {
+			in.IntervalMonths = nil
+		}
+		if mergepatch.Has(patch, "interval_months") && in.IntervalMonths != nil && !mergepatch.Has(patch, "interval_days") {
+			in.IntervalDays = nil
 		}
 		meta, err := vehicles.LoadMeta(ctx, tx, vehicleID, false)
 		if err != nil {
 			return err
 		}
-		var in Input
-		if err := kernel.MergePatch(inputOf(row), patch, &in); err != nil {
-			return problem.BadRequest("Ungültiger Merge Patch.")
-		}
-		r, err := normalize(meta, in)
+		p, err := in.validate(meta)
 		if err != nil {
 			return err
 		}
-		active := in.Active == nil || *in.Active
-		row, err = store.New(tx).UpdateItem(ctx, store.UpdateItemParams{ID: row.ID, Title: r.in.Title, Description: pg.Text(in.Description),
-			Category: in.Category, ManufacturerRecommended: in.ManufacturerRecommended, SourceDocumentID: pg.Up(in.SourceDocumentID), SourcePage: i4(in.SourcePage),
-			ScheduleMode: in.ScheduleMode, IntervalMonths: i4(in.IntervalMonths), IntervalDays: i4(in.IntervalDays), IntervalDistance: r.intervalDist,
-			AnchorDate: r.anchorDate, AnchorTotal: r.anchorTotal, DueDateOnce: r.dueDateOnce, DueTotalOnce: r.dueTotalOnce,
-			UpcomingDays: i4(in.Thresholds.UpcomingDays), DueDays: i4(in.Thresholds.DueDays), UpcomingDistance: r.upcomingDist, DueDistance: r.dueDist,
-			Inputs: r.inputsJSON(), Active: active, Note: in.Note, UpdatedBy: pg.U(actor.AccountID), Version: row.Version})
+		row, err := store.New(tx).UpdateItem(ctx, store.UpdateItemParams{ID: cur.ID, Title: in.Title, Description: pg.T(in.Description),
+			Category: in.Category, ManufacturerRecommended: in.ManufacturerRecommended, SourceDocumentID: pg.UP(in.SourceDocumentID),
+			SourcePage: pg.I4(in.SourcePage), ScheduleMode: in.ScheduleMode, IntervalMonths: pg.I4(in.IntervalMonths), IntervalDays: pg.I4(in.IntervalDays),
+			IntervalDistance: pg.I8(p.intervalDistance), AnchorDate: pg.DP(p.anchorDate), AnchorTotal: pg.I8(p.anchorTotal), DueDateOnce: pg.DP(p.dueDateOnce),
+			DueTotalOnce: pg.I8(p.dueTotalOnce), UpcomingDays: pg.I4(in.Thresholds.UpcomingDays), DueDays: pg.I4(in.Thresholds.DueDays),
+			UpcomingDistance: pg.I8(p.upcomingDistance), DueDistance: pg.I8(p.dueDistance), DistanceUnit: p.unit, Active: *in.Active, Note: in.Note,
+			UpdatedBy: pg.U(actor.AccountID), Version: cur.Version})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return problem.PreconditionFailed(nil)
 		}
 		if err != nil {
 			return err
 		}
-		if err := audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_updated", VehicleID: &vehicleID, ObjectType: "maintenance_item",
-			ObjectID: itemID, Changes: map[string]any{"patch": json.RawMessage(patch)}}); err != nil {
+		if out, err = s.view(ctx, tx, row); err != nil {
 			return err
 		}
-		out, err = s.viewOne(ctx, tx, actor, row)
-		return err
+		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_updated", VehicleID: &vehicleID, ObjectType: "maintenance_item",
+			ObjectID: id, Changes: rawJSON(patch)})
 	})
 	return out, err
 }
 
-// Delete löscht eine Definition weich.
-func (s *Service) Delete(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID, ifMatch string) error {
+// DeleteItem löscht eine Definition weich.
+func (s *Service) DeleteItem(ctx context.Context, actor kernel.Actor, vehicleID, id uuid.UUID, ifMatch string) error {
 	version, err := vehicles.ParseETag(ifMatch)
 	if err != nil {
 		return err
 	}
-	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		row, err := s.loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		cur, err := loadItem(ctx, tx, actor, vehicleID, id, identity.RoleEditor)
 		if err != nil {
 			return err
 		}
-		if int(row.Version) != version {
+		if int(cur.Version) != version {
 			return problem.PreconditionFailed(nil)
 		}
-		n, err := store.New(tx).SoftDeleteItem(ctx, store.SoftDeleteItemParams{ID: row.ID, UpdatedBy: pg.U(actor.AccountID), Version: row.Version})
-		if err != nil {
-			return err
-		}
-		if n == 0 {
+		if n, err := store.New(tx).SoftDeleteItem(ctx, store.SoftDeleteItemParams{ID: cur.ID, UpdatedBy: pg.U(actor.AccountID), Version: cur.Version}); err != nil || n == 0 {
+			if err != nil {
+				return err
+			}
 			return problem.PreconditionFailed(nil)
 		}
-		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_deleted", VehicleID: &vehicleID, ObjectType: "maintenance_item", ObjectID: itemID})
+		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_deleted", VehicleID: &vehicleID, ObjectType: "maintenance_item", ObjectID: id})
 	})
 }
 
-// --- Bewertung ---
+// ListItems listet die Definitionen mit Fälligkeit.
+func (s *Service) ListItems(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, includeDeleted bool, active *bool) ([]ItemView, error) {
+	if _, err := identity.Authorize(ctx, s.pool, actor, vehicleID, identity.RoleViewer); err != nil {
+		return nil, err
+	}
+	rows, err := store.New(s.pool).ListItems(ctx, store.ListItemsParams{VehicleID: pg.U(vehicleID), IncludeDeleted: includeDeleted, Active: boolP(active)})
+	if err != nil {
+		return nil, err
+	}
+	ev, err := s.env(ctx, s.pool, vehicleID)
+	if err != nil {
+		return nil, err
+	}
+	out := []ItemView{}
+	for _, r := range rows {
+		st, err := s.evaluate(ctx, s.pool, ev, r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ItemView{EntityMeta: meta(r), ItemInput: itemInput(r), Status: st})
+	}
+	return out, nil
+}
 
-// evalEnv bündelt alles, was die Bewertung der Definitionen eines Fahrzeugs braucht.
+// ---------- Fälligkeit ----------
+
 type evalEnv struct {
-	meta        vehicles.Meta
-	env         Env
-	completions map[uuid.UUID][]Completion
-	defaults    Thresholds
-	units       kernel.Units
+	Env
+	base  Thresholds
+	meta  vehicles.Meta
+	segs  odometer.Segments
+	valid []odometer.Reading
 }
 
-func thresholdsFrom(m map[string]any, meter string, base Thresholds) Thresholds {
-	t := base
-	th, _ := m["maintenance_thresholds"].(map[string]any)
-	if th == nil {
-		th, _ = m["default_thresholds"].(map[string]any)
-	}
-	if th == nil {
-		return t
-	}
-	if v, ok := th["upcoming_days"].(float64); ok {
-		t.UpcomingDays = int(v)
-	}
-	if v, ok := th["due_days"].(float64); ok {
-		t.DueDays = int(v)
-	}
-	dist := func(k string, dst *int64) {
-		q, ok := th[k].(map[string]any)
-		if !ok {
-			return
-		}
-		v, _ := q["value"].(float64)
-		u, _ := q["unit"].(string)
-		if !allowedUnit(meter, u) {
-			return
-		}
-		if c, err := kernel.ToCanonical(v, u); err == nil {
-			*dst = c.Canonical
-		}
-	}
-	dist("upcoming_distance", &t.UpcomingDistance)
-	dist("due_distance", &t.DueDistance)
-	return t
-}
-
-// defaultsFor löst die Vorgaben auf: Installation, dann Nutzer (MA-05).
-func (s *Service) defaultsFor(ctx context.Context, accountID uuid.UUID, meter string) Thresholds {
-	t := Thresholds{UpcomingDays: 30, DueDays: 7, UpcomingDistance: 1_500_000, DueDistance: 500_000}
-	if meter == odometer.MeterEngineHours {
-		t.UpcomingDistance, t.DueDistance = 20*3600, 5*3600
-	}
-	if s.InstallSettings != nil {
-		if m, err := s.InstallSettings(ctx); err == nil {
-			t = thresholdsFrom(m, meter, t)
-		}
-	}
-	if s.UserSettings != nil {
-		if m, err := s.UserSettings(ctx, accountID); err == nil {
-			t = thresholdsFrom(m, meter, t)
-		}
-	}
-	return t
-}
-
-func (s *Service) prepareEval(ctx context.Context, q store.DBTX, actor kernel.Actor, vehicleID uuid.UUID) (evalEnv, error) {
-	var e evalEnv
-	meta, err := vehicles.LoadMeta(ctx, q, vehicleID, false)
+func (s *Service) env(ctx context.Context, db store.DBTX, vehicleID uuid.UUID) (evalEnv, error) {
+	meta, err := vehicles.LoadMeta(ctx, db, vehicleID, false)
 	if err != nil {
-		return e, err
+		return evalEnv{}, err
 	}
-	segs, valid, err := s.odo.State(ctx, q, vehicleID)
+	segs, valid, err := s.odo.Snapshot(ctx, db, vehicleID)
 	if err != nil {
-		return e, err
+		return evalEnv{}, err
 	}
 	now := s.Now()
-	e = evalEnv{meta: meta, completions: map[uuid.UUID][]Completion{}, defaults: s.defaultsFor(ctx, actor.AccountID, meta.UsageMeter)}
-	if s.UserSettings != nil {
-		if m, err := s.UserSettings(ctx, actor.AccountID); err == nil {
-			e.units = kernel.UnitsFromSettings(m)
-		}
+	e := evalEnv{Env: Env{Today: kernel.Today(now, meta.OwnerTimeZone)}, meta: meta, segs: segs, valid: valid}
+	e.base = DefaultThresholds(meta.UsageMeter == odometer.MeterEngineHours)
+	if s.OwnerSettings != nil {
+		e.base = ownerThresholds(e.base, s.OwnerSettings(ctx, db, vehicleID))
 	}
-	if e.units.Distance == "" {
-		e.units = kernel.UnitsFromSettings(nil)
-	}
-	e.env = Env{Today: kernel.LocalDate(now, meta.OwnerTimeZone)}
 	if cur := odometer.Current(valid, segs); cur.Kind != odometer.KindUnknown {
 		t := cur.Total
-		e.env.Current = &t
+		e.Current = &t
 	}
-	if rate, ok := odometer.DailyRate(valid, segs, now); ok {
-		e.env.DailyRate = rate
-	}
-	loc, err := time.LoadLocation(meta.OwnerTimeZone)
-	if err != nil {
-		loc = time.UTC
-	}
-	e.env.ValueAt = func(day time.Time) *int64 {
-		v := odometer.ValueAt(valid, segs, time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, loc))
-		if v.Kind == odometer.KindUnknown {
-			return nil
-		}
-		return &v.Total
-	}
-	rows, err := store.New(q).ListCompletionsForVehicle(ctx, pg.U(vehicleID))
-	if err != nil {
-		return e, err
-	}
-	for _, c := range rows {
-		id := uuid.UUID(c.ItemID.Bytes)
-		e.completions[id] = append(e.completions[id], Completion{ID: uuid.UUID(c.ID.Bytes), On: c.CompletedOn.Time, Total: pg.Int8Ptr(c.CompletedTotal)})
-	}
-	for k := range e.completions {
-		SortCompletions(e.completions[k])
-	}
+	e.DailyRate, e.RateKnown = odometer.DailyRate(valid, segs, now)
 	return e, nil
 }
 
-func defOf(r store.MaintenanceItem, defaults Thresholds) Def {
-	d := Def{Mode: r.ScheduleMode, Distance: r.IntervalDistance.Int64, AnchorTotal: pg.Int8Ptr(r.AnchorTotal), DueTotalOnce: pg.Int8Ptr(r.DueTotalOnce),
-		Created: time.Date(r.CreatedAt.Time.Year(), r.CreatedAt.Time.Month(), r.CreatedAt.Time.Day(), 0, 0, 0, 0, time.UTC), Thresholds: defaults}
-	if r.IntervalMonths.Valid {
-		d.Months = int(r.IntervalMonths.Int32)
+func (s *Service) evaluate(ctx context.Context, db store.DBTX, ev evalEnv, r store.MaintenanceItem) (DueStatusView, error) {
+	rows, err := store.New(db).ListCompletions(ctx, r.ID)
+	if err != nil {
+		return DueStatusView{}, err
 	}
-	if r.IntervalDays.Valid {
-		d.Days = int(r.IntervalDays.Int32)
+	cs := make([]Completion, 0, len(rows))
+	for _, c := range rows {
+		comp := Completion{ID: pg.ID(c.ID), On: *pg.DateP(c.CompletedOn), Total: pg.I8P(c.CompletedTotal)}
+		if comp.Total == nil { // MA-03: Stand zum Erledigungsdatum 12:00
+			if v := odometer.ValueAt(ev.valid, ev.segs, kernel.Noon(comp.On, ev.meta.OwnerTimeZone)); v.Kind != odometer.KindUnknown {
+				t := v.Total
+				comp.Total = &t
+			}
+		}
+		cs = append(cs, comp)
 	}
-	if r.AnchorDate.Valid {
-		t := r.AnchorDate.Time
-		d.AnchorDate = &t
-	}
-	if r.DueDateOnce.Valid {
-		t := r.DueDateOnce.Time
-		d.DueDateOnce = &t
-	}
-	if r.UpcomingDays.Valid {
-		d.Thresholds.UpcomingDays = int(r.UpcomingDays.Int32)
-	}
-	if r.DueDays.Valid {
-		d.Thresholds.DueDays = int(r.DueDays.Int32)
-	}
-	if r.UpcomingDistance.Valid {
-		d.Thresholds.UpcomingDistance = r.UpcomingDistance.Int64
-	}
-	if r.DueDistance.Valid {
-		d.Thresholds.DueDistance = r.DueDistance.Int64
-	}
-	return d
-}
-
-func (e evalEnv) status(r store.MaintenanceItem) StatusView {
-	id := uuid.UUID(r.ID.Bytes)
-	v := StatusView{ItemID: id, VehicleID: uuid.UUID(r.VehicleID.Bytes), Title: r.Title, Level: LevelUnknown}
+	SortCompletions(cs)
+	v := DueStatusView{ItemID: pg.ID(r.ID), VehicleID: pg.ID(r.VehicleID), Title: r.Title, Level: LevelUnknown}
 	if !r.Active {
-		return v
+		return v, nil
 	}
-	st := Evaluate(defOf(r, e.defaults), e.completions[id], e.env)
-	v.Level, v.Estimated, v.DaysRemaining = st.Level, st.Estimated, st.DaysRemaining
+	st := Evaluate(domainItem(r, ev.base), cs, ev.Env)
+	v.Level = st.Level
 	if st.Reason != "" {
 		reason := st.Reason
 		v.ReasonTrigger = &reason
 	}
-	if st.DueDate != nil {
-		s := st.DueDate.Format("2006-01-02")
-		v.DueDate = &s
-	}
-	if st.EstimatedDate != nil {
-		s := st.EstimatedDate.Format("2006-01-02")
-		v.EstimatedDueDate, v.estimated = &s, st.EstimatedDate
-	}
-	cu, du := kernel.UnitMeter, e.units.Distance
-	if e.meta.UsageMeter == odometer.MeterEngineHours {
-		cu, du = kernel.UnitSecond, "h"
+	v.DueDate, v.DaysRemaining, v.EstimatedDueDate, v.Estimated = dateStr(st.DueDate), st.DaysRemaining, dateStr(st.EstimatedDate), st.Estimated
+	cu := kernel.UnitMeter
+	if ev.meta.UsageMeter == odometer.MeterEngineHours {
+		cu = kernel.UnitSecond
 	}
 	if st.DueTotal != nil {
 		v.DueTotal = &odometer.QuantityView{Canonical: *st.DueTotal, CanonicalUnit: cu}
 	}
-	if st.DistanceRemaining != nil {
-		v.DistanceRemaining = &kernel.DisplayValue{Value: kernel.Display(*st.DistanceRemaining, du, 0), Unit: du}
+	if st.Remaining != nil {
+		f, _ := kernel.FromCanonical(*st.Remaining, r.DistanceUnit)
+		v.DistanceRemaining = &kernel.DisplayValue{Value: kernel.Round(f, 1), Unit: r.DistanceUnit}
 	}
-	return v
+	return v, nil
 }
 
-func (s *Service) viewOf(e evalEnv, r store.MaintenanceItem) View {
-	return View{ID: uuid.UUID(r.ID.Bytes), Version: int(r.Version), VehicleID: uuid.UUID(r.VehicleID.Bytes), CreatedAt: r.CreatedAt.Time,
-		CreatedBy: uuid.UUID(r.CreatedBy.Bytes), UpdatedAt: r.UpdatedAt.Time, UpdatedBy: uuid.UUID(r.UpdatedBy.Bytes), RecordedAt: r.RecordedAt.Time,
-		Origin: r.Origin, Input: inputOf(r), Status: e.status(r)}
-}
-
-func (s *Service) viewOne(ctx context.Context, q store.DBTX, actor kernel.Actor, r store.MaintenanceItem) (View, error) {
-	e, err := s.prepareEval(ctx, q, actor, uuid.UUID(r.VehicleID.Bytes))
+func (s *Service) view(ctx context.Context, db store.DBTX, r store.MaintenanceItem) (ItemView, error) {
+	ev, err := s.env(ctx, db, pg.ID(r.VehicleID))
 	if err != nil {
-		return View{}, err
+		return ItemView{}, err
 	}
-	return s.viewOf(e, r), nil
+	st, err := s.evaluate(ctx, db, ev, r)
+	return ItemView{EntityMeta: meta(r), ItemInput: itemInput(r), Status: st}, err
 }
 
-// Get liest eine Definition mit Fälligkeit.
-func (s *Service) Get(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID) (View, error) {
-	row, err := s.loadItem(ctx, s.pool, actor, vehicleID, itemID, identity.RoleViewer)
-	if err != nil {
-		return View{}, err
-	}
-	return s.viewOne(ctx, s.pool, actor, row)
-}
-
-// List liefert alle Definitionen eines Fahrzeugs, nach Dringlichkeit sortiert (MA-07).
-func (s *Service) List(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, active *bool, includeDeleted bool) ([]View, error) {
+// DueStatus bewertet alle aktiven Definitionen eines Fahrzeugs, sortiert nach MA-07.
+func (s *Service) DueStatus(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID) ([]DueStatusView, error) {
 	if _, err := identity.Authorize(ctx, s.pool, actor, vehicleID, identity.RoleViewer); err != nil {
 		return nil, err
 	}
-	e, err := s.prepareEval(ctx, s.pool, actor, vehicleID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := store.New(s.pool).ListItems(ctx, store.ListItemsParams{VehicleID: pg.U(vehicleID), IncludeDeleted: includeDeleted})
-	if err != nil {
-		return nil, err
-	}
-	out := []View{}
-	for _, r := range rows {
-		if active != nil && r.Active != *active {
-			continue
-		}
-		out = append(out, s.viewOf(e, r))
-	}
-	sortViews(out)
-	return out, nil
+	return s.dueStatus(ctx, vehicleID)
 }
 
-func sortViews(v []View) {
-	items := make([]Item, len(v))
-	idx := map[uuid.UUID]View{}
-	for i, x := range v {
-		items[i] = Item{ID: x.ID, Status: Status{Level: x.Status.Level, EstimatedDate: x.Status.estimated}}
-		idx[x.ID] = x
-	}
-	SortNextDue(items)
-	for i, it := range items {
-		v[i] = idx[it.ID]
-	}
-}
-
-// Status liefert die Fälligkeit aller aktiven Definitionen (DueStatus, MA-07).
-func (s *Service) Status(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID) ([]StatusView, error) {
+func (s *Service) dueStatus(ctx context.Context, vehicleID uuid.UUID) ([]DueStatusView, error) {
 	t := true
-	views, err := s.List(ctx, actor, vehicleID, &t, false)
+	rows, err := store.New(s.pool).ListItems(ctx, store.ListItemsParams{VehicleID: pg.U(vehicleID), Active: boolP(&t)})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]StatusView, 0, len(views))
-	for _, v := range views {
-		out = append(out, v.Status)
+	ev, err := s.env(ctx, s.pool, vehicleID)
+	if err != nil {
+		return nil, err
+	}
+	var out []DueStatusView
+	for _, r := range rows {
+		v, err := s.evaluate(ctx, s.pool, ev, r)
+		if err != nil {
+			return nil, err
+		}
+		if v.Level != LevelCompleted {
+			out = append(out, v)
+		}
+	}
+	SortViews(out)
+	if out == nil {
+		out = []DueStatusView{}
 	}
 	return out, nil
 }
 
-// DueFeed liefert Fälligkeiten über alle Fahrzeuge des Nutzers ab einer Mindeststufe.
-func (s *Service) DueFeed(ctx context.Context, actor kernel.Actor, minLevel string) ([]StatusView, error) {
+// SortViews sortiert nach MA-07.
+func SortViews(vs []DueStatusView) {
+	rs := make([]Ranked, len(vs))
+	byID := map[uuid.UUID]DueStatusView{}
+	for i, v := range vs {
+		var est *time.Time
+		if v.EstimatedDueDate != nil {
+			d, _ := kernel.ParseDate(*v.EstimatedDueDate)
+			est = &d
+		}
+		rs[i] = Ranked{ItemID: v.ItemID, Status: Status{Level: v.Level, EstimatedDate: est}}
+		byID[v.ItemID] = v
+	}
+	SortNextDue(rs)
+	for i, r := range rs {
+		vs[i] = byID[r.ItemID]
+	}
+}
+
+// DueFeed liefert die Fälligkeiten aller Fahrzeuge des Kontos ab einer Mindeststufe.
+func (s *Service) DueFeed(ctx context.Context, actor kernel.Actor, minLevel string) ([]DueStatusView, error) {
+	members, err := identity.MemberVehicles(ctx, s.pool, actor.AccountID)
+	if err != nil {
+		return nil, err
+	}
 	if minLevel == "" {
 		minLevel = LevelUpcoming
 	}
-	if _, ok := rank[minLevel]; !ok {
-		return nil, problem.Validation(problem.FieldError{Pointer: "/min_level", Code: "enum"})
+	out := []DueStatusView{}
+	for id := range members {
+		if _, err := vehicles.LoadMeta(ctx, s.pool, id, false); err != nil {
+			continue // gelöschtes Fahrzeug
+		}
+		vs, err := s.dueStatus(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range vs {
+			if Rank(v.Level) >= Rank(minLevel) {
+				out = append(out, v)
+			}
+		}
 	}
-	ids, err := identity.ActorVehicles(ctx, s.pool, actor)
+	SortViews(out)
+	return out, nil
+}
+
+// ---------- Erledigungen ----------
+
+func completionView(c store.MaintenanceCompletion, unit string) CompletionView {
+	return CompletionView{ID: pg.ID(c.ID), Kind: c.Kind, CompletedOn: kernel.FormatDate(*pg.DateP(c.CompletedOn)),
+		CompletedOdometer: qty(pg.I8P(c.CompletedTotal), unit), ServiceEntryID: pg.IDP(c.ServiceEntryID), Reason: pg.TP(c.Reason)}
+}
+
+// ListCompletions listet die Erledigungen einer Definition.
+func (s *Service) ListCompletions(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID) ([]CompletionView, error) {
+	it, err := loadItem(ctx, s.pool, actor, vehicleID, itemID, identity.RoleViewer)
 	if err != nil {
 		return nil, err
 	}
-	var all []View
-	for vid := range ids {
-		views, err := s.List(ctx, actor, vid, nil, false)
-		if err != nil {
-			var pe *problem.Error
-			if errors.As(err, &pe) && pe.Status == 404 {
-				continue
-			}
-			return nil, err
-		}
-		for _, v := range views {
-			if v.Input.Active != nil && *v.Input.Active && Rank(v.Status.Level) >= Rank(minLevel) {
-				all = append(all, v)
-			}
-		}
+	rows, err := store.New(s.pool).ListCompletions(ctx, it.ID)
+	if err != nil {
+		return nil, err
 	}
-	sortViews(all)
-	out := make([]StatusView, 0, len(all))
-	for _, v := range all {
-		out = append(out, v.Status)
+	out := []CompletionView{}
+	for i := len(rows) - 1; i >= 0; i-- { // neueste zuerst
+		out = append(out, completionView(rows[i], it.DistanceUnit))
 	}
 	return out, nil
 }
 
-// --- Erledigungen ---
-
-// CompletionInput ist eine manuelle Erledigung (Complete/Skip).
+// CompletionInput ist eine manuelle Erledigung oder Auslassung.
 type CompletionInput struct {
-	Kind              string      `json:"kind"`
-	CompletedOn       string      `json:"completed_on"`
-	CompletedOdometer *vehicles.Q `json:"completed_odometer"`
-	Reason            *string     `json:"reason"`
+	Kind        string      `json:"kind"`
+	CompletedOn string      `json:"completed_on"`
+	Odometer    *vehicles.Q `json:"completed_odometer,omitempty"`
+	Reason      *string     `json:"reason,omitempty"`
 }
 
-func completionView(c store.MaintenanceCompletion) CompletionView {
-	v := CompletionView{ID: uuid.UUID(c.ID.Bytes), Kind: c.Kind, CompletedOn: c.CompletedOn.Time.Format("2006-01-02"),
-		ServiceEntryID: pg.UUIDPtr(c.ServiceEntryID), Reason: pg.TextPtr(c.Reason)}
-	if len(c.CompletedInput) > 0 {
-		var q vehicles.Q
-		if json.Unmarshal(c.CompletedInput, &q) == nil && q.Unit != "" {
-			v.CompletedOdometer = &q
-		}
-	}
-	return v
-}
-
-// Complete erfasst eine Erledigung (done) oder ein Auslassen (skipped, Begründung Pflicht).
-func (s *Service) Complete(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID, idemKey string, in CompletionInput) (CompletionView, bool, error) {
+// Complete erledigt manuell (done) oder lässt aus (skipped, Begründung Pflicht).
+// Mit Idempotency-Key liefert eine Wiederholung dieselbe Erledigung (ADR-012).
+func (s *Service) Complete(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID, in CompletionInput, key *string) (CompletionView, bool, error) {
 	var out CompletionView
 	created := true
-	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		item, err := s.loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		it, err := loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
 		if err != nil {
 			return err
 		}
 		q := store.New(tx)
-		if idemKey != "" {
-			if ex, err := q.GetCompletionByKey(ctx, store.GetCompletionByKeyParams{ItemID: item.ID, IdempotencyKey: pgtype.Text{String: idemKey, Valid: true}}); err == nil {
-				out, created = completionView(ex), false
+		if key != nil && *key != "" {
+			if ex, err := q.CompletionByKey(ctx, store.CompletionByKeyParams{ItemID: it.ID, IdempotencyKey: pg.T(key)}); err == nil {
+				out, created = completionView(ex, it.DistanceUnit), false
 				return nil
 			} else if !errors.Is(err, pgx.ErrNoRows) {
 				return err
@@ -743,84 +680,59 @@ func (s *Service) Complete(ctx context.Context, actor kernel.Actor, vehicleID, i
 			return err
 		}
 		var errs []problem.FieldError
-		if in.Kind != "done" && in.Kind != "skipped" {
+		if in.Kind != CompletionDone && in.Kind != CompletionSkipped {
 			errs = append(errs, problem.FieldError{Pointer: "/kind", Code: "enum"})
 		}
-		on, perr := time.Parse("2006-01-02", in.CompletedOn)
-		if perr != nil {
+		on, err := kernel.ParseDate(in.CompletedOn)
+		if err != nil {
 			errs = append(errs, problem.FieldError{Pointer: "/completed_on", Code: "date"})
-		} else if on.After(kernel.LocalDate(s.Now(), meta.OwnerTimeZone)) {
+		} else if on.After(kernel.Today(s.Now(), meta.OwnerTimeZone)) {
 			errs = append(errs, problem.FieldError{Pointer: "/completed_on", Code: "future", Message: "Das Datum liegt in der Zukunft."})
 		}
-		reason := ""
-		if in.Reason != nil {
-			reason = strings.TrimSpace(*in.Reason)
+		var reason *string
+		if in.Reason != nil && strings.TrimSpace(*in.Reason) != "" {
+			r := strings.TrimSpace(*in.Reason)
+			reason = &r
 		}
-		if in.Kind == "skipped" && reason == "" {
-			errs = append(errs, problem.FieldError{Pointer: "/reason", Code: "required", Message: "Beim Auslassen ist eine Begründung Pflicht."})
+		if in.Kind == CompletionSkipped && reason == nil {
+			errs = append(errs, problem.FieldError{Pointer: "/reason", Code: "required", Message: "Begründung für das Auslassen fehlt."})
 		}
-		var total pgtype.Int8
-		var input []byte
-		if in.CompletedOdometer != nil {
-			if !allowedUnit(meta.UsageMeter, in.CompletedOdometer.Unit) {
-				errs = append(errs, problem.FieldError{Pointer: "/completed_odometer/unit", Code: "unit"})
-			} else if c, err := kernel.ToCanonical(in.CompletedOdometer.Value, in.CompletedOdometer.Unit); err == nil {
-				total = pgtype.Int8{Int64: c.Canonical, Valid: true}
-				input, _ = json.Marshal(in.CompletedOdometer)
+		var total *int64
+		if in.Odometer != nil {
+			c, err := kernel.ToCanonical(in.Odometer.Value, in.Odometer.Unit)
+			if err != nil || in.Odometer.Value < 0 {
+				errs = append(errs, problem.FieldError{Pointer: "/completed_odometer", Code: "unit"})
+			} else {
+				total = &c.Canonical
 			}
 		}
 		if len(errs) > 0 {
 			return problem.Validation(errs...)
 		}
-		var key pgtype.Text
-		if idemKey != "" {
-			key = pgtype.Text{String: idemKey, Valid: true}
-		}
-		var rs pgtype.Text
-		if reason != "" {
-			rs = pgtype.Text{String: reason, Valid: true}
-		}
 		cid := kernel.NewID()
-		row, err := q.InsertCompletion(ctx, store.InsertCompletionParams{ID: pg.U(cid), ItemID: item.ID, VehicleID: pg.U(vehicleID), Kind: in.Kind,
-			CompletedOn: pgtype.Date{Time: on, Valid: true}, CompletedTotal: total, CompletedInput: input, Reason: rs, IdempotencyKey: key,
-			CreatedBy: pg.U(actor.AccountID)})
+		row, err := q.InsertCompletion(ctx, store.InsertCompletionParams{ID: pg.U(cid), ItemID: it.ID, VehicleID: it.VehicleID, Kind: in.Kind,
+			CompletedOn: pg.D(on), CompletedTotal: pg.I8(total), Reason: pg.T(reason), IdempotencyKey: pg.T(key), CreatedBy: pg.U(actor.AccountID)})
 		if err != nil {
 			return err
 		}
-		out = completionView(row)
-		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.item_" + map[string]string{"done": "completed", "skipped": "skipped"}[in.Kind],
-			VehicleID: &vehicleID, ObjectType: "maintenance_completion", ObjectID: cid, Changes: map[string]any{"item_id": itemID, "on": in.CompletedOn}, Reason: reason})
+		out = completionView(row, it.DistanceUnit)
+		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.completion_changed", VehicleID: &vehicleID, ObjectType: "maintenance_completion",
+			ObjectID: cid, Changes: map[string]any{"item_id": itemID, "kind": in.Kind, "completed_on": in.CompletedOn}, Reason: deref(reason)})
 	})
 	return out, created, err
 }
 
-// Completions listet die Erledigungen einer Definition, neueste zuerst.
-func (s *Service) Completions(ctx context.Context, actor kernel.Actor, vehicleID, itemID uuid.UUID) ([]CompletionView, error) {
-	item, err := s.loadItem(ctx, s.pool, actor, vehicleID, itemID, identity.RoleViewer)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := store.New(s.pool).ListCompletions(ctx, item.ID)
-	if err != nil {
-		return nil, err
-	}
-	out := []CompletionView{}
-	for _, r := range rows {
-		out = append(out, completionView(r))
-	}
-	return out, nil
-}
-
-// DeleteCompletion nimmt eine Erledigung zurück; die Fälligkeit ergibt sich neu (M-8).
+// DeleteCompletion nimmt eine manuelle Erledigung zurück; solche aus Serviceeinträgen
+// werden über den Eintrag geändert (SH-04).
 func (s *Service) DeleteCompletion(ctx context.Context, actor kernel.Actor, vehicleID, itemID, completionID uuid.UUID) error {
-	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		item, err := s.loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		it, err := loadItem(ctx, tx, actor, vehicleID, itemID, identity.RoleEditor)
 		if err != nil {
 			return err
 		}
 		q := store.New(tx)
 		c, err := q.GetCompletion(ctx, pg.U(completionID))
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && c.ItemID != item.ID) {
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && c.ItemID != it.ID) {
 			return problem.NotFound()
 		}
 		if err != nil {
@@ -829,9 +741,103 @@ func (s *Service) DeleteCompletion(ctx context.Context, actor kernel.Actor, vehi
 		if c.ServiceEntryID.Valid {
 			return problem.Conflict("Diese Erledigung stammt aus einem Serviceeintrag und wird dort geändert.")
 		}
-		if _, err := q.SoftDeleteCompletion(ctx, c.ID); err != nil {
+		if _, err := q.DeleteCompletion(ctx, c.ID); err != nil {
 			return err
 		}
-		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.completion_deleted", VehicleID: &vehicleID, ObjectType: "maintenance_completion", ObjectID: completionID})
+		return audit.Write(ctx, tx, actor, audit.Event{Action: "maintenance.completion_changed", VehicleID: &vehicleID, ObjectType: "maintenance_completion",
+			ObjectID: completionID, Changes: map[string]any{"deleted": true, "item_id": itemID}})
 	})
+}
+
+// RecordFromService setzt die Erledigungen eines Serviceeintrags (SH-04) in dessen
+// Transaktion. itemIDs == nil behält die bisherige Auswahl und übernimmt nur Datum und Stand.
+func RecordFromService(ctx context.Context, tx pgx.Tx, vehicleID, entryID uuid.UUID, itemIDs *[]uuid.UUID, on time.Time, total *int64, createdBy uuid.UUID) error {
+	q := store.New(tx)
+	var ids []uuid.UUID
+	if itemIDs == nil {
+		rows, err := q.ServiceCompletions(ctx, pg.U(entryID))
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			ids = append(ids, pg.ID(r.ItemID))
+		}
+	} else {
+		seen := map[uuid.UUID]bool{}
+		for i, id := range *itemIDs {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			it, err := q.GetItem(ctx, pg.U(id))
+			if errors.Is(err, pgx.ErrNoRows) || (err == nil && (pg.ID(it.VehicleID) != vehicleID || it.DeletedAt.Valid)) {
+				return problem.Validation(problem.FieldError{Pointer: "/completes_maintenance_item_ids/" + itoa(i), Code: "not_found",
+					Message: "Wartungsdefinition gehört nicht zu diesem Fahrzeug."})
+			}
+			if err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+	}
+	keep := make([]pgUUID, 0, len(ids))
+	for _, id := range ids {
+		keep = append(keep, pg.U(id))
+	}
+	if err := q.DeleteServiceCompletions(ctx, store.DeleteServiceCompletionsParams{ServiceEntryID: pg.U(entryID), Keep: keep}); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := q.UpsertServiceCompletion(ctx, store.UpsertServiceCompletionParams{ID: pg.U(kernel.NewID()), ItemID: pg.U(id),
+			VehicleID: pg.U(vehicleID), ServiceEntryID: pg.U(entryID), CompletedOn: pg.D(on), CompletedTotal: pg.I8(total), CreatedBy: pg.U(createdBy)}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RemoveServiceCompletions entfernt alle Erledigungen eines gelöschten Serviceeintrags.
+func RemoveServiceCompletions(ctx context.Context, tx pgx.Tx, entryID uuid.UUID) error {
+	return store.New(tx).DeleteServiceCompletions(ctx, store.DeleteServiceCompletionsParams{ServiceEntryID: pg.U(entryID), Keep: []pgUUID{}})
+}
+
+// ServiceItemIDs liefert die durch einen Serviceeintrag erledigten Definitionen.
+func ServiceItemIDs(ctx context.Context, db store.DBTX, entryID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := store.New(db).ServiceCompletions(ctx, pg.U(entryID))
+	if err != nil {
+		return nil, err
+	}
+	out := []uuid.UUID{}
+	for _, r := range rows {
+		out = append(out, pg.ID(r.ItemID))
+	}
+	return out, nil
+}
+
+// ownerThresholds übernimmt gesetzte Werte aus settings.maintenance_thresholds.
+func ownerThresholds(base Thresholds, settings map[string]any) Thresholds {
+	m, _ := settings["maintenance_thresholds"].(map[string]any)
+	if m == nil {
+		return base
+	}
+	if v, ok := m["upcoming_days"].(float64); ok && v >= 0 {
+		base.UpcomingDays = int(v)
+	}
+	if v, ok := m["due_days"].(float64); ok && v >= 0 {
+		base.DueDays = int(v)
+	}
+	dist := func(key string, dst *int64) {
+		q, _ := m[key].(map[string]any)
+		val, ok1 := q["value"].(float64)
+		unit, ok2 := q["unit"].(string)
+		if !ok1 || !ok2 || val < 0 {
+			return
+		}
+		if c, err := kernel.ToCanonical(val, unit); err == nil {
+			*dst = c.Canonical
+		}
+	}
+	dist("upcoming_distance", &base.UpcomingDistance)
+	dist("due_distance", &base.DueDistance)
+	return base
 }

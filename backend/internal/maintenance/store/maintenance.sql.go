@@ -11,8 +11,62 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completionByKey = `-- name: CompletionByKey :one
+SELECT id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by FROM maintenance.completion WHERE item_id = $1 AND idempotency_key = $2
+`
+
+type CompletionByKeyParams struct {
+	ItemID         pgtype.UUID
+	IdempotencyKey pgtype.Text
+}
+
+func (q *Queries) CompletionByKey(ctx context.Context, arg CompletionByKeyParams) (MaintenanceCompletion, error) {
+	row := q.db.QueryRow(ctx, completionByKey, arg.ItemID, arg.IdempotencyKey)
+	var i MaintenanceCompletion
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.VehicleID,
+		&i.ServiceEntryID,
+		&i.Kind,
+		&i.CompletedOn,
+		&i.CompletedTotal,
+		&i.Reason,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const deleteCompletion = `-- name: DeleteCompletion :execrows
+DELETE FROM maintenance.completion WHERE id = $1
+`
+
+func (q *Queries) DeleteCompletion(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCompletion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteServiceCompletions = `-- name: DeleteServiceCompletions :exec
+DELETE FROM maintenance.completion WHERE service_entry_id = $1 AND NOT (item_id = ANY($2::uuid[]))
+`
+
+type DeleteServiceCompletionsParams struct {
+	ServiceEntryID pgtype.UUID
+	Keep           []pgtype.UUID
+}
+
+func (q *Queries) DeleteServiceCompletions(ctx context.Context, arg DeleteServiceCompletionsParams) error {
+	_, err := q.db.Exec(ctx, deleteServiceCompletions, arg.ServiceEntryID, arg.Keep)
+	return err
+}
+
 const getCompletion = `-- name: GetCompletion :one
-SELECT id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, service_entry_id, reason, idempotency_key, created_at, created_by, deleted_at FROM maintenance.completion WHERE id = $1 AND deleted_at IS NULL
+SELECT id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by FROM maintenance.completion WHERE id = $1
 `
 
 func (q *Queries) GetCompletion(ctx context.Context, id pgtype.UUID) (MaintenanceCompletion, error) {
@@ -22,52 +76,20 @@ func (q *Queries) GetCompletion(ctx context.Context, id pgtype.UUID) (Maintenanc
 		&i.ID,
 		&i.ItemID,
 		&i.VehicleID,
+		&i.ServiceEntryID,
 		&i.Kind,
 		&i.CompletedOn,
 		&i.CompletedTotal,
-		&i.CompletedInput,
-		&i.ServiceEntryID,
 		&i.Reason,
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.CreatedBy,
-		&i.DeletedAt,
-	)
-	return i, err
-}
-
-const getCompletionByKey = `-- name: GetCompletionByKey :one
-SELECT id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, service_entry_id, reason, idempotency_key, created_at, created_by, deleted_at FROM maintenance.completion WHERE item_id = $1 AND idempotency_key = $2
-`
-
-type GetCompletionByKeyParams struct {
-	ItemID         pgtype.UUID
-	IdempotencyKey pgtype.Text
-}
-
-func (q *Queries) GetCompletionByKey(ctx context.Context, arg GetCompletionByKeyParams) (MaintenanceCompletion, error) {
-	row := q.db.QueryRow(ctx, getCompletionByKey, arg.ItemID, arg.IdempotencyKey)
-	var i MaintenanceCompletion
-	err := row.Scan(
-		&i.ID,
-		&i.ItemID,
-		&i.VehicleID,
-		&i.Kind,
-		&i.CompletedOn,
-		&i.CompletedTotal,
-		&i.CompletedInput,
-		&i.ServiceEntryID,
-		&i.Reason,
-		&i.IdempotencyKey,
-		&i.CreatedAt,
-		&i.CreatedBy,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getItem = `-- name: GetItem :one
-SELECT id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM maintenance.item WHERE id = $1 AND deleted_at IS NULL
+SELECT id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, distance_unit, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM maintenance.item WHERE id = $1
 `
 
 func (q *Queries) GetItem(ctx context.Context, id pgtype.UUID) (MaintenanceItem, error) {
@@ -94,50 +116,7 @@ func (q *Queries) GetItem(ctx context.Context, id pgtype.UUID) (MaintenanceItem,
 		&i.DueDays,
 		&i.UpcomingDistance,
 		&i.DueDistance,
-		&i.Inputs,
-		&i.Active,
-		&i.Note,
-		&i.Origin,
-		&i.CreatedAt,
-		&i.CreatedBy,
-		&i.UpdatedAt,
-		&i.UpdatedBy,
-		&i.RecordedAt,
-		&i.DeletedAt,
-		&i.Version,
-	)
-	return i, err
-}
-
-const getItemAny = `-- name: GetItemAny :one
-SELECT id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM maintenance.item WHERE id = $1
-`
-
-func (q *Queries) GetItemAny(ctx context.Context, id pgtype.UUID) (MaintenanceItem, error) {
-	row := q.db.QueryRow(ctx, getItemAny, id)
-	var i MaintenanceItem
-	err := row.Scan(
-		&i.ID,
-		&i.VehicleID,
-		&i.Title,
-		&i.Description,
-		&i.Category,
-		&i.ManufacturerRecommended,
-		&i.SourceDocumentID,
-		&i.SourcePage,
-		&i.ScheduleMode,
-		&i.IntervalMonths,
-		&i.IntervalDays,
-		&i.IntervalDistance,
-		&i.AnchorDate,
-		&i.AnchorTotal,
-		&i.DueDateOnce,
-		&i.DueTotalOnce,
-		&i.UpcomingDays,
-		&i.DueDays,
-		&i.UpcomingDistance,
-		&i.DueDistance,
-		&i.Inputs,
+		&i.DistanceUnit,
 		&i.Active,
 		&i.Note,
 		&i.Origin,
@@ -153,19 +132,19 @@ func (q *Queries) GetItemAny(ctx context.Context, id pgtype.UUID) (MaintenanceIt
 }
 
 const insertCompletion = `-- name: InsertCompletion :one
-INSERT INTO maintenance.completion (id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, reason, idempotency_key, created_by)
+INSERT INTO maintenance.completion (id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, service_entry_id, reason, idempotency_key, created_at, created_by, deleted_at
+RETURNING id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by
 `
 
 type InsertCompletionParams struct {
 	ID             pgtype.UUID
 	ItemID         pgtype.UUID
 	VehicleID      pgtype.UUID
+	ServiceEntryID pgtype.UUID
 	Kind           string
 	CompletedOn    pgtype.Date
 	CompletedTotal pgtype.Int8
-	CompletedInput []byte
 	Reason         pgtype.Text
 	IdempotencyKey pgtype.Text
 	CreatedBy      pgtype.UUID
@@ -176,10 +155,10 @@ func (q *Queries) InsertCompletion(ctx context.Context, arg InsertCompletionPara
 		arg.ID,
 		arg.ItemID,
 		arg.VehicleID,
+		arg.ServiceEntryID,
 		arg.Kind,
 		arg.CompletedOn,
 		arg.CompletedTotal,
-		arg.CompletedInput,
 		arg.Reason,
 		arg.IdempotencyKey,
 		arg.CreatedBy,
@@ -189,16 +168,14 @@ func (q *Queries) InsertCompletion(ctx context.Context, arg InsertCompletionPara
 		&i.ID,
 		&i.ItemID,
 		&i.VehicleID,
+		&i.ServiceEntryID,
 		&i.Kind,
 		&i.CompletedOn,
 		&i.CompletedTotal,
-		&i.CompletedInput,
-		&i.ServiceEntryID,
 		&i.Reason,
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.CreatedBy,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -206,9 +183,9 @@ func (q *Queries) InsertCompletion(ctx context.Context, arg InsertCompletionPara
 const insertItem = `-- name: InsertItem :one
 INSERT INTO maintenance.item (id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page,
     schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once,
-    upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_by, updated_by)
+    upcoming_days, due_days, upcoming_distance, due_distance, distance_unit, active, note, origin, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $25)
-RETURNING id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version
+RETURNING id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, distance_unit, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version
 `
 
 type InsertItemParams struct {
@@ -232,7 +209,7 @@ type InsertItemParams struct {
 	DueDays                 pgtype.Int4
 	UpcomingDistance        pgtype.Int8
 	DueDistance             pgtype.Int8
-	Inputs                  []byte
+	DistanceUnit            string
 	Active                  bool
 	Note                    string
 	Origin                  string
@@ -261,7 +238,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (Mainten
 		arg.DueDays,
 		arg.UpcomingDistance,
 		arg.DueDistance,
-		arg.Inputs,
+		arg.DistanceUnit,
 		arg.Active,
 		arg.Note,
 		arg.Origin,
@@ -289,7 +266,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (Mainten
 		&i.DueDays,
 		&i.UpcomingDistance,
 		&i.DueDistance,
-		&i.Inputs,
+		&i.DistanceUnit,
 		&i.Active,
 		&i.Note,
 		&i.Origin,
@@ -305,7 +282,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (Mainten
 }
 
 const listCompletions = `-- name: ListCompletions :many
-SELECT id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, service_entry_id, reason, idempotency_key, created_at, created_by, deleted_at FROM maintenance.completion WHERE item_id = $1 AND deleted_at IS NULL ORDER BY completed_on DESC, id DESC
+SELECT id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by FROM maintenance.completion WHERE item_id = $1 ORDER BY completed_on, completed_total NULLS FIRST, id
 `
 
 func (q *Queries) ListCompletions(ctx context.Context, itemID pgtype.UUID) ([]MaintenanceCompletion, error) {
@@ -321,54 +298,14 @@ func (q *Queries) ListCompletions(ctx context.Context, itemID pgtype.UUID) ([]Ma
 			&i.ID,
 			&i.ItemID,
 			&i.VehicleID,
+			&i.ServiceEntryID,
 			&i.Kind,
 			&i.CompletedOn,
 			&i.CompletedTotal,
-			&i.CompletedInput,
-			&i.ServiceEntryID,
 			&i.Reason,
 			&i.IdempotencyKey,
 			&i.CreatedAt,
 			&i.CreatedBy,
-			&i.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCompletionsForVehicle = `-- name: ListCompletionsForVehicle :many
-SELECT id, item_id, vehicle_id, kind, completed_on, completed_total, completed_input, service_entry_id, reason, idempotency_key, created_at, created_by, deleted_at FROM maintenance.completion WHERE vehicle_id = $1 AND deleted_at IS NULL ORDER BY completed_on, id
-`
-
-func (q *Queries) ListCompletionsForVehicle(ctx context.Context, vehicleID pgtype.UUID) ([]MaintenanceCompletion, error) {
-	rows, err := q.db.Query(ctx, listCompletionsForVehicle, vehicleID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []MaintenanceCompletion
-	for rows.Next() {
-		var i MaintenanceCompletion
-		if err := rows.Scan(
-			&i.ID,
-			&i.ItemID,
-			&i.VehicleID,
-			&i.Kind,
-			&i.CompletedOn,
-			&i.CompletedTotal,
-			&i.CompletedInput,
-			&i.ServiceEntryID,
-			&i.Reason,
-			&i.IdempotencyKey,
-			&i.CreatedAt,
-			&i.CreatedBy,
-			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -381,18 +318,21 @@ func (q *Queries) ListCompletionsForVehicle(ctx context.Context, vehicleID pgtyp
 }
 
 const listItems = `-- name: ListItems :many
-SELECT id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM maintenance.item
-WHERE vehicle_id = $1 AND ($2::boolean OR deleted_at IS NULL)
+SELECT id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, distance_unit, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version FROM maintenance.item
+WHERE vehicle_id = $1
+  AND ($2::boolean OR deleted_at IS NULL)
+  AND ($3::boolean IS NULL OR active = $3::boolean)
 ORDER BY title, id
 `
 
 type ListItemsParams struct {
 	VehicleID      pgtype.UUID
 	IncludeDeleted bool
+	Active         pgtype.Bool
 }
 
 func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]MaintenanceItem, error) {
-	rows, err := q.db.Query(ctx, listItems, arg.VehicleID, arg.IncludeDeleted)
+	rows, err := q.db.Query(ctx, listItems, arg.VehicleID, arg.IncludeDeleted, arg.Active)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +361,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]Mainten
 			&i.DueDays,
 			&i.UpcomingDistance,
 			&i.DueDistance,
-			&i.Inputs,
+			&i.DistanceUnit,
 			&i.Active,
 			&i.Note,
 			&i.Origin,
@@ -443,16 +383,76 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]Mainten
 	return items, nil
 }
 
-const softDeleteCompletion = `-- name: SoftDeleteCompletion :execrows
-UPDATE maintenance.completion SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+const listVehicleCompletions = `-- name: ListVehicleCompletions :many
+SELECT id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by FROM maintenance.completion WHERE vehicle_id = $1
 `
 
-func (q *Queries) SoftDeleteCompletion(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteCompletion, id)
+func (q *Queries) ListVehicleCompletions(ctx context.Context, vehicleID pgtype.UUID) ([]MaintenanceCompletion, error) {
+	rows, err := q.db.Query(ctx, listVehicleCompletions, vehicleID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []MaintenanceCompletion
+	for rows.Next() {
+		var i MaintenanceCompletion
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.VehicleID,
+			&i.ServiceEntryID,
+			&i.Kind,
+			&i.CompletedOn,
+			&i.CompletedTotal,
+			&i.Reason,
+			&i.IdempotencyKey,
+			&i.CreatedAt,
+			&i.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const serviceCompletions = `-- name: ServiceCompletions :many
+SELECT id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by FROM maintenance.completion WHERE service_entry_id = $1 ORDER BY item_id
+`
+
+func (q *Queries) ServiceCompletions(ctx context.Context, serviceEntryID pgtype.UUID) ([]MaintenanceCompletion, error) {
+	rows, err := q.db.Query(ctx, serviceCompletions, serviceEntryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MaintenanceCompletion
+	for rows.Next() {
+		var i MaintenanceCompletion
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.VehicleID,
+			&i.ServiceEntryID,
+			&i.Kind,
+			&i.CompletedOn,
+			&i.CompletedTotal,
+			&i.Reason,
+			&i.IdempotencyKey,
+			&i.CreatedAt,
+			&i.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const softDeleteItem = `-- name: SoftDeleteItem :execrows
@@ -478,9 +478,9 @@ const updateItem = `-- name: UpdateItem :one
 UPDATE maintenance.item SET title = $2, description = $3, category = $4, manufacturer_recommended = $5, source_document_id = $6,
     source_page = $7, schedule_mode = $8, interval_months = $9, interval_days = $10, interval_distance = $11, anchor_date = $12,
     anchor_total = $13, due_date_once = $14, due_total_once = $15, upcoming_days = $16, due_days = $17, upcoming_distance = $18,
-    due_distance = $19, inputs = $20, active = $21, note = $22, updated_by = $23, updated_at = now(), version = version + 1
+    due_distance = $19, distance_unit = $20, active = $21, note = $22, updated_by = $23, updated_at = now(), version = version + 1
 WHERE id = $1 AND version = $24 AND deleted_at IS NULL
-RETURNING id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, inputs, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version
+RETURNING id, vehicle_id, title, description, category, manufacturer_recommended, source_document_id, source_page, schedule_mode, interval_months, interval_days, interval_distance, anchor_date, anchor_total, due_date_once, due_total_once, upcoming_days, due_days, upcoming_distance, due_distance, distance_unit, active, note, origin, created_at, created_by, updated_at, updated_by, recorded_at, deleted_at, version
 `
 
 type UpdateItemParams struct {
@@ -503,7 +503,7 @@ type UpdateItemParams struct {
 	DueDays                 pgtype.Int4
 	UpcomingDistance        pgtype.Int8
 	DueDistance             pgtype.Int8
-	Inputs                  []byte
+	DistanceUnit            string
 	Active                  bool
 	Note                    string
 	UpdatedBy               pgtype.UUID
@@ -531,7 +531,7 @@ func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (Mainten
 		arg.DueDays,
 		arg.UpcomingDistance,
 		arg.DueDistance,
-		arg.Inputs,
+		arg.DistanceUnit,
 		arg.Active,
 		arg.Note,
 		arg.UpdatedBy,
@@ -559,7 +559,7 @@ func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (Mainten
 		&i.DueDays,
 		&i.UpcomingDistance,
 		&i.DueDistance,
-		&i.Inputs,
+		&i.DistanceUnit,
 		&i.Active,
 		&i.Note,
 		&i.Origin,
@@ -570,6 +570,51 @@ func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (Mainten
 		&i.RecordedAt,
 		&i.DeletedAt,
 		&i.Version,
+	)
+	return i, err
+}
+
+const upsertServiceCompletion = `-- name: UpsertServiceCompletion :one
+INSERT INTO maintenance.completion (id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, created_by)
+VALUES ($1, $2, $3, $4, 'done', $5, $6, $7)
+ON CONFLICT (item_id, service_entry_id) WHERE service_entry_id IS NOT NULL
+DO UPDATE SET completed_on = EXCLUDED.completed_on, completed_total = EXCLUDED.completed_total
+RETURNING id, item_id, vehicle_id, service_entry_id, kind, completed_on, completed_total, reason, idempotency_key, created_at, created_by
+`
+
+type UpsertServiceCompletionParams struct {
+	ID             pgtype.UUID
+	ItemID         pgtype.UUID
+	VehicleID      pgtype.UUID
+	ServiceEntryID pgtype.UUID
+	CompletedOn    pgtype.Date
+	CompletedTotal pgtype.Int8
+	CreatedBy      pgtype.UUID
+}
+
+func (q *Queries) UpsertServiceCompletion(ctx context.Context, arg UpsertServiceCompletionParams) (MaintenanceCompletion, error) {
+	row := q.db.QueryRow(ctx, upsertServiceCompletion,
+		arg.ID,
+		arg.ItemID,
+		arg.VehicleID,
+		arg.ServiceEntryID,
+		arg.CompletedOn,
+		arg.CompletedTotal,
+		arg.CreatedBy,
+	)
+	var i MaintenanceCompletion
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.VehicleID,
+		&i.ServiceEntryID,
+		&i.Kind,
+		&i.CompletedOn,
+		&i.CompletedTotal,
+		&i.Reason,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }

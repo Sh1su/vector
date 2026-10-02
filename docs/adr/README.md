@@ -38,6 +38,7 @@ Jede bewusste Architektur- oder Fachentscheidung, insbesondere jede Abweichung v
 | [029](ADR-029-kosten-waehrung.md) | Kosten: Währung je Betrag, Teile/Arbeit getrennt | akzeptiert |
 | [030](ADR-030-deployment-betrieb.md) | Deployment, Backup und Betrieb | akzeptiert |
 | [031](ADR-031-altfehler-korrigieren.md) | Fehler der Altanwendung korrigieren statt nachbauen | akzeptiert |
+| [032](ADR-032-mcp-server-und-websuche.md) | MCP-Server, Claude als Chat-Anbieter, Websuche für Herstellerangaben | akzeptiert |
 
 ADR-002 (Modulgrenzen) ist in ADR-001 aufgegangen.
 

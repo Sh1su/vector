@@ -29,13 +29,14 @@ services:
       VECTRA_DATABASE_URL: postgres://vectra:${POSTGRES_PASSWORD}@postgres:5432/vectra
       VECTRA_SETUP_TOKEN: ${VECTRA_SETUP_TOKEN:-}
       VECTRA_COOKIE_SECURE: "true"
-      # Optionaler KI-Assistent (ADR-024); leer = aus. Siehe README.
+      VECTRA_MAX_UPLOAD_MB: ${VECTRA_MAX_UPLOAD_MB:-25}
+      # KI-Assistent (ADR-024, ADR-032): leer = aus
       VECTRA_ASSISTANT_PROVIDER: ${VECTRA_ASSISTANT_PROVIDER:-}
       VECTRA_ASSISTANT_MODEL: ${VECTRA_ASSISTANT_MODEL:-}
-      VECTRA_ASSISTANT_BASE_URL: ${VECTRA_ASSISTANT_BASE_URL:-}
-      VECTRA_ASSISTANT_API_KEY: ${VECTRA_ASSISTANT_API_KEY:-}
-      VECTRA_ASSISTANT_EXTERNAL: ${VECTRA_ASSISTANT_EXTERNAL:-}
-      VECTRA_ASSISTANT_NAME: ${VECTRA_ASSISTANT_NAME:-}
+      VECTRA_ASSISTANT_WEB_SEARCH: ${VECTRA_ASSISTANT_WEB_SEARCH:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - files:/data   # Dokumente und Bilder (ADR-017), ins Backup aufnehmen
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -55,5 +56,6 @@ services:
 
 volumes:
   pgdata:
+  files:
   caddy_data:
   caddy_config:

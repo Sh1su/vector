@@ -19,7 +19,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gopkg.in/yaml.v3"
 
-	"github.com/sh1su/vector/backend/internal/assistant"
+	"github.com/sh1su/vector/backend/internal/costs"
+	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
 	istore "github.com/sh1su/vector/backend/internal/identity/store"
@@ -28,6 +29,9 @@ import (
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/oil"
 	"github.com/sh1su/vector/backend/internal/platform/db"
+	"github.com/sh1su/vector/backend/internal/platform/storage"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 	vstore "github.com/sh1su/vector/backend/internal/vehicles/store"
 )
@@ -41,10 +45,12 @@ type env struct {
 	t    *testing.T
 	srv  *httptest.Server
 	pool *pgxpool.Pool
-	chat *fakeChat
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// newEnvWith erlaubt Tests, Abhängigkeiten zu ergänzen (z. B. den Assistenten mit Fake-API).
+func newEnvWith(t *testing.T, extra func(*Deps, *pgxpool.Pool)) *env {
 	url := os.Getenv("VECTRA_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("VECTRA_TEST_DATABASE_URL nicht gesetzt")
@@ -57,36 +63,32 @@ func newEnv(t *testing.T) *env {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE identity.api_token, assistant.request_log, assistant.proposal, assistant.message, assistant.conversation, assistant.user_state, audit.event, maintenance.completion, maintenance.item, fuel.fill, oil.entry, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.account`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE identity.installation_settings SET settings = '{}'`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE fuel.fill, oil.entry, documents.vehicle_image, documents.attachment, documents.document_file, documents.document, documents.file, costs.ledger, costs.occurrence_dismissal, costs.entry, costs.plan, maintenance.completion, maintenance.item, service.part_line, service.cost_item, service.entry, trips.trip, trips.category, audit.event, odometer.reading, odometer.segment, identity.vehicle_membership, vehicles.vehicle, identity.session, identity.api_token, identity.account, assistant.consent, assistant.message, assistant.proposal, assistant.conversation, assistant.request_log`); err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ids := identity.NewService(pool, setupToken, log)
 	veh := vehicles.NewService(pool)
 	veh.Settings = ids.Settings
-	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) { return odometer.HasReadings(ctx, q, id) }
+	veh.HasReadings = func(ctx context.Context, q vstore.DBTX, id uuid.UUID) (bool, error) {
+		return odometer.HasReadings(ctx, q, id)
+	}
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: 250})
 	odo.Now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
-	fu := fuel.NewService(pool, odo)
-	fu.Now = odo.Now
-	oi := oil.NewService(pool, odo)
-	oi.Now = odo.Now
-	ma := maintenance.NewService(pool, odo)
-	ma.Now = odo.Now
-	ma.UserSettings = ids.Settings
-	ma.InstallSettings = ids.Installation
-	chat := &fakeChat{}
-	as := assistant.NewService(pool, assistant.Deps{Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma,
-		Units: func(ctx context.Context, id uuid.UUID) kernel.Units { st, _ := ids.Settings(ctx, id); return kernel.UnitsFromSettings(st) }},
-		chat, assistant.Config{Provider: "fake", Name: "Testanbieter", Model: "fake-1", External: true, DailyLimit: 5, RetentionDays: 30}, log)
-	as.Installation = ids.Installation
-	as.Now = odo.Now
-	srv := httptest.NewServer(Handler(Deps{Assistant: as, Identity: ids, Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma, Log: log, CookieSecure: false, OdometerVMaxKmh: 250}))
+	now := func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
+	cs, ms, ss, ts := costs.NewService(pool, odo), maintenance.NewService(pool, odo), servicehistory.NewService(pool, odo), trips.NewService(pool, odo)
+	cs.Now, ms.Now, ss.Now, ts.Now = now, now, now, now
+	fu, oi := fuel.NewService(pool, odo), oil.NewService(pool, odo)
+	fu.Now, oi.Now = now, now
+	deps := Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: cs, Maintenance: ms, Service: ss, Trips: ts, Fuel: fu, Oil: oi,
+		Documents: documents.NewService(pool, storage.Local{Dir: t.TempDir()}, 2<<20),
+		Log:       log, CookieSecure: false}
+	if extra != nil {
+		extra(&deps, pool)
+	}
+	srv := httptest.NewServer(Handler(deps))
 	t.Cleanup(func() { srv.Close(); pool.Close() })
-	return &env{t: t, srv: srv, pool: pool, chat: chat}
+	return &env{t: t, srv: srv, pool: pool}
 }
 
 type client struct {
@@ -421,7 +423,7 @@ func TestAuthorizationAcrossVehicles(t *testing.T) {
 func TestNotImplementedIs501(t *testing.T) {
 	e := newEnv(t)
 	c := e.adminClient()
-	r := c.do("GET", "/me/invitations", nil)
+	r := c.do("GET", "/me/notification-preferences", nil)
 	expect(t, r, 501, "not implemented")
 	if r.header.Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("content type %s", r.header.Get("Content-Type"))

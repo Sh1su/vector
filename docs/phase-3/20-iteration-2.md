@@ -1,46 +1,54 @@
-# Phase 3 – Iteration 2 (Teil 1): Kraftstoff, Öl, Wartung, Einstellungen, Assistent
+# Phase 3 – Iteration 2 (Teil 1): Fahrten, Wartung, Servicehistorie, Kosten
 
-- **Datum:** 2026-10-02 · **Anlass:** Rückmeldung des Auftraggebers nach dem Start des Docker-Images: Kraftstoff, Öl, Assistent und Einstellungen fehlten in der Web-App („in Arbeit“); gewünscht waren außerdem vorbereitete Wartungspläne für ein Mercedes-Benz-CDI-Fahrzeug, Modelljahr 2019.
-- **Grundlagen:** `docs/phase-2/10-domaene-fuel.md`, `-oil.md`, `-maintenance.md`, ADR-007, ADR-010, ADR-012, ADR-024 bis ADR-026.
+- **Status:** umgesetzt · **Datum:** 2026-09-30 · **Auftrag:** „Fahrten, Wartung, Servicehistorie und Kosten nun angeben“
+- **Umfang:** die vier Module der Navigationsgruppe „Alltag“. Fahrten (planmäßig Iteration 3) wurden auf Wunsch vorgezogen. Kraftstoff und Öl folgen im zweiten Teil der Iteration 2.
 
-## Umgesetzt
+## Backend
 
-| Bereich | Backend | Web |
-|---|---|---|
-| **Kraftstoff** (FU-01 bis FU-08) | `fuel-fills` (CRUD, Merge Patch, If-Match, idempotent), eigener Messpunkt je Vorgang (I-FU-3/4), Intervallverbrauch, Ø und Monatswerte je Abschlussmonat, Netzbezug und Batterieverbrauch bei Strom, Preis pro Einheit serverseitig (FU-07), F1–F4 und ODO-03 in **einer** 422-Antwort | Seite „Kraftstoff“: Erfassen (Betrag oder Preis je Einheit), Verlauf mit Intervallverbrauch und Gründen, Monatsbalken, Kennzahlen |
-| **Öl** (OI-00 bis OI-05) | `oil-entries`, Messreihen ab Ölwechsel, Paarverbrauch (Volumen oder Prozentpunkte), Nachfüllrate mit Randfällen, Statistik, Hinweis „Verbrauch gestiegen“ | Seite „Öl“: Messung/Nachfüllung/Ölwechsel, Stand als Prozent oder Stufe, Messreihen, Kennzahlen |
-| **Wartung** (MA-01 bis MA-07) | Definitionen, Erledigen/Auslassen mit Idempotency-Key, Fälligkeit nach Zeit/Distanz, festes Raster, Schwellen Definition → Nutzer → Installation, Prognose über ODO-08, `/me/due`, **Vorlagen** (`GET /maintenance-templates`, neu in der Spezifikation) | Seite „Wartung“: Liste nach Dringlichkeit, Anlegen/Bearbeiten, Erledigen, **Vorlagen-Dialog** zum Vorab-Erfassen (Intervalle anpassen, „zuletzt erledigt am / bei km“ je Position) |
-| **Einstellungen** | Validierung der Nutzereinstellungen, Passwortwechsel (beendet andere Sitzungen), Sitzungsliste, Installationseinstellungen für Admins (`assistant_enabled`, Vorgabe-Schwellen, Aufbewahrung) | Seite „Einstellungen“: Profil, Darstellung, Einheiten, Wartungsschwellen, Passwort, Geräte, Assistent, Installation (Admin) |
-| **Assistent** (ADR-024/026) | Anbieter `anthropic` (offizielles Go-SDK, serverseitiger Ausweichpfad bei Ablehnung) und `openai_compatible`/`ollama`; Zustimmung je Nutzer bei externem Anbieter; lesende Werkzeuge mit Nutzerrechten; schreibende Werkzeuge erzeugen **Vorschläge** mit Probelauf (Transaktion wird zurückgerollt) und Befunden; Bestätigen führt mit Herkunft `assistant` aus; SSE-Strom; Protokoll ohne Inhalte; Tageslimit; Aufbewahrungsfrist | Seite „Assistent“: Zustimmung, Unterhaltungen, Chat mit Zwischenständen, Vorschlagskarten (Bestätigen/Bearbeiten/Verwerfen, Befunde bestätigen) |
-| Übersicht | – | echte Kennzahlen (Ø Verbrauch, Ölverbrauch), nächste Wartungen, Schnellerfassung |
+| Modul | Paket | Schema | Regeln |
+|---|---|---|---|
+| Maintenance | `internal/maintenance` | `maintenance.item`, `maintenance.completion` | MA-01 bis MA-08 (Fälligkeit wird immer berechnet, nie fortgeschrieben), I-MA-1 bis I-MA-4 |
+| ServiceHistory | `internal/servicehistory` | `service.entry`, `service.cost_item`, `service.part_line` | SH-01 bis SH-04, I-SH-1 bis I-SH-4 |
+| Costs | `internal/costs` | `costs.entry`, `costs.plan`, `costs.occurrence_dismissal`, `costs.ledger` | CO-01 bis CO-07, I-CO-1 bis I-CO-4 |
+| Trips | `internal/trips` | `trips.trip`, `trips.category` | TR-01 bis TR-05, I-TR-1 bis I-TR-5 |
 
-## Wartungsplan-Vorlagen
+Querschnitt:
+- **Odometer-Batch** (`odometer/batch.go`): Quellmodule legen, korrigieren und löschen ihre Messpunkte in ihrer eigenen Transaktion. Alle Kandidaten werden gemeinsam geprüft, damit sämtliche Befunde (z. B. Start- und Endstand einer Fahrt) in einer 422-Antwort erscheinen.
+- **I-ODO-3** gilt jetzt auch für Korrekturen: Messpunkte aus Service oder Fahrten werden nur über ihren Eintrag geändert (409 über `/odometer/readings/{id}/corrections`).
+- **Kostenbuch:** Serviceeinträge und sonstige Kosten schreiben ihre Zeilen in derselben Transaktion; alle Auswertungen lesen nur das Kostenbuch.
+- **Erledigungen aus Serviceeinträgen** (SH-04) sind idempotent je (Definition, Eintrag), folgen Datums-/Standänderungen und verschwinden beim Löschen.
+- Gemeinsame Bausteine: `kernel/date.go` (Kalenderdaten, Monatsaddition), `kernel/money.go`, `platform/pgconv`, `platform/mergepatch`, `platform/cursor`.
 
-Eingebaut sind vier Vorlagen (`backend/internal/maintenance/templates.go`):
-
-- **Mercedes-Benz Sprinter CDI (Baureihe 907/910, ab 2018)** – Basisfahrzeug vieler Reisemobile, Modelljahr 2019 mit OM651/OM654.
-- **Mercedes-Benz Vito / V-Klasse / Marco Polo CDI (W447)**.
-- **Reisemobil-Aufbau (Ergänzung)** – Gasprüfung G 607, Dichtigkeitsprüfung, Wasseranlage, Aufbaubatterie u. a.
-- **PKW allgemein (Deutschland)**.
-
-Die Intervalle sind **Richtwerte** und deshalb nicht als Herstellervorgabe markiert (`manufacturer_recommended = false`, AP-10: eine Vorgabe braucht eine Quelle). Maßgeblich bleiben Serviceheft und ASSYST-PLUS-Anzeige. Optionale Positionen (z. B. Automatikgetriebeöl) sind beim Übernehmen abgewählt.
-
-## Abweichungen und Entscheidungen
-
-- `GET /assistant/status` antwortet auch bei ausgeschaltetem Assistenten (mit `enabled: false`; Admins sehen zusätzlich, ob ein Anbieter konfiguriert ist). Alle übrigen Assistant-Endpunkte bleiben dann `404`. In der Spezifikation vermerkt.
-- Anbieter, Modell und Schlüssel kommen aus der Umgebung des Servers, nicht aus der Datenbank (keine Geheimnisse in der Oberfläche). Admins schalten nur ein/aus. Bei `anthropic` ist ohne Angabe `claude-opus-5-5` voreingestellt.
-- RAG/Dokumentensuche (ADR-025) folgt mit dem Modul Documents (Iteration 3); das Werkzeug `search_documents` fehlt deshalb noch.
-- Kosten-Ereignisse (Fuel → Costs) und die Verknüpfung Öl ↔ Serviceeintrag folgen mit Costs/ServiceHistory; `service_entry_id` wird bis dahin abgelehnt.
-- Ohne „zuletzt erledigt“ zählt bei Wartungen das Anlegedatum als Start; die Liste weist darauf hin.
+Spezifikation: `DueStatus.vehicle_id` (Feed über alle Fahrzeuge) und `TripCategory.version` (If-Match beim Ändern) ergänzt.
 
 ## Tests
 
-- Fachregeln als Tabellentests mit den Soll-Beispielen: U-1 bis U-11 (Fuel), L-1 bis L-12 (Oil), M-1 bis M-13 (Maintenance), FU-07 (Rundung).
-- Integrationstests gegen PostgreSQL: Fuel, Oil, Maintenance inkl. Vorlagen und Idempotenz, Einstellungen/Passwort/Sitzungen/Installation, Assistent mit Fake-Anbieter (Probelauf schreibt nichts, Bestätigung mit Audit-Akteur `assistant`, Befunde nur durch den Nutzer, fremde Fahrzeuge unsichtbar).
-- Adaptertests gegen nachgebaute Anthropic- und OpenAI-Endpunkte (Werkzeugschleife, Ausweichpfad, Ablehnung).
-- Browser-Durchlauf (Playwright) über alle neuen Seiten inkl. Assistent mit lokalem Fake-Modell.
-- Web-Build: initiales JS 116 KB gzip (Budget 300 KB); Fachseiten werden nachgeladen.
+- Unit-Tests der Fachlogik mit den Soll-Beispielen **M-1 bis M-13** und **C-1 bis C-7**.
+- Integrationstests gegen PostgreSQL (`server/modules_test.go`): **S-1 bis S-6**, M-9, C-2 bis C-9, **T-1 bis T-9**, I-ODO-3, Idempotency-Key.
+- Sichtprüfung im Browser (Playwright) aller vier Seiten und der Übersicht.
 
-## Offen für Iteration 2 (Teil 2)
+## Web
 
-ServiceHistory (Serviceeinträge erledigen Wartungen, SH-04) und Costs (Kostenbuch, Kraftstoffkosten per Event).
+Neue Seiten `Fahrten`, `Wartung`, `Servicehistorie`, `Kosten`; die Übersicht zeigt die nächste Wartung, die Jahreskosten und Schnellerfassung. Initiales JS 125 KB gzip (Budget 300 KB).
+
+## Dokumente und Bilder (Teil 2)
+
+- Backend `internal/documents` (Schema `documents`): Dateien mit generierten Schlüsseln, Typ per Magic Bytes, SHA-256-Dubletten (200 mit vorhandener Datei), Vorschauen als JPEG ohne EXIF, Auslieferung mit `Content-Disposition`, `nosniff` und CSP-Sandbox (ADR-017/018); Dokumente mit mehreren Dateien, Anhänge an Service- und Kosteneinträge, Fahrzeugbilder mit Hauptbild.
+- Speicher: `VECTRA_STORAGE_DIR` (Container: Volume `/data`), Größe `VECTRA_MAX_UPLOAD_MB` (Standard 25).
+- Web: Seite „Dokumente“, Fahrzeugfoto auf der Fahrzeugkarte und der Übersicht, Anhänge in Servicehistorie und Kosten.
+- Android: alle Module dieser Iteration plus Dokumente und Fahrzeugfoto, siehe `10-android.md`.
+
+## Einstellungen und Wartungsbücher (Teil 3)
+
+- **Einstellungen (Web):** Profil (Anzeigename), Passwort ändern (`POST /me/password`, beendet alle anderen Sitzungen), Darstellung, Vorgaben (Zeitzone, Währung, Einheiten, Foto-Standort), Wartungsschwellen, angemeldete Geräte (`GET/DELETE /me/sessions`).
+- **Wartungsschwellen:** Reihenfolge Definition → Einstellungen des Fahrzeughalters → Installationsvorgabe (MA-05).
+- **Wartungsbücher** (`backend/internal/maintenance/books/*.json`): Hyundai Tucson NX4 (11 Positionen) und Leapmotor B10 (10 Positionen). `GET /maintenance-books`, `POST /vehicles/{id}/maintenance-books/{book}/apply` legt gewöhnliche Wartungsdefinitionen an (idempotent; vorhandene Titel werden übersprungen). Basis ist die Erstzulassung (erste Intervalle wie HU nach 36 Monaten oder Kühlmittel nach 10 Jahren/210.000 km gelten) oder die letzte Inspektion.
+- Die Intervalle sind **Richtwerte** und tragen diesen Hinweis; sie müssen mit dem Serviceheft des eigenen Fahrzeugs abgeglichen werden. Weitere Modelle: eine JSON-Datei im selben Ordner.
+- **App-Sitzung:** Login mit `client_kind=android` hält die Sitzung 90 Tage Leerlauf, höchstens 365 Tage (Web: 7/30 Tage).
+- Tests: `server/settings_test.go` (Wartungsbücher, Passwort, Sitzungen, Schwellen des Halters).
+
+## Annahmen und offene Punkte
+
+- Schwellen: Definition → Installationsvorgabe (30/7 Tage, 1 500/500 km). Eine Nutzereinstellung dazwischen folgt mit der Einstellungsseite.
+- Wertverlust bezieht sich auf die gesamte Besitzdauer; die Auswertung weist darauf hin.
+- Benachrichtigungen bei Fälligkeit (MA-09) folgen mit Notifications in Iteration 4.

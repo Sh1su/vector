@@ -1,15 +1,18 @@
-// Package maintenance beschreibt, was wann fällig wird, und berechnet
-// Fälligkeit und Dringlichkeit (docs/phase-2/10-domaene-maintenance.md).
+// Package maintenance beschreibt, was wann fällig wird: Wartungsdefinitionen,
+// Erledigungen und die berechnete Fälligkeit (docs/phase-2/10-domaene-maintenance.md).
 package maintenance
 
 import (
+	"math"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/sh1su/vector/backend/internal/kernel"
 )
 
-// Stufen (MA-04), dazu unknown (nicht bewertbar) und completed (einmalig erledigt).
+// Stufen (MA-04), aufsteigend nach Dringlichkeit.
 const (
 	LevelCompleted = "completed"
 	LevelUnknown   = "unknown"
@@ -19,16 +22,20 @@ const (
 	LevelOverdue   = "overdue"
 )
 
-var rank = map[string]int{LevelCompleted: -1, LevelUnknown: 0, LevelOK: 1, LevelUpcoming: 2, LevelDue: 3, LevelOverdue: 4}
+var levelRank = map[string]int{LevelCompleted: 0, LevelUnknown: 1, LevelOK: 2, LevelUpcoming: 3, LevelDue: 4, LevelOverdue: 5}
 
-// Rank liefert die Ordnung einer Stufe.
-func Rank(level string) int { return rank[level] }
+// Rank liefert die Rangfolge einer Stufe (höher = dringender).
+func Rank(level string) int { return levelRank[level] }
 
 // Planungsarten.
 const (
-	ModeOnce     = "once"
-	ModeFromLast = "from_last_completion"
-	ModeGrid     = "fixed_grid"
+	ModeOnce          = "once"
+	ModeFromLast      = "from_last_completion"
+	ModeFixedGrid     = "fixed_grid"
+	TriggerTime       = "time"
+	TriggerDistance   = "distance"
+	CompletionDone    = "done"
+	CompletionSkipped = "skipped"
 )
 
 // Thresholds sind die aufgelösten Schwellen einer Definition (MA-05).
@@ -37,17 +44,24 @@ type Thresholds struct {
 	UpcomingDistance, DueDistance int64
 }
 
-// Def ist eine Definition in der für die Regeln nötigen Form. Daten sind
-// Kalenderdaten (UTC-Mitternacht) in der Zeitzone des Fahrzeugs.
-type Def struct {
+// DefaultThresholds sind die Installationsvorgaben (MA-05): 30/7 Tage und
+// 1 500/500 km bzw. 20/5 h bei Stundenzählern.
+func DefaultThresholds(engineHours bool) Thresholds {
+	if engineHours {
+		return Thresholds{UpcomingDays: 30, DueDays: 7, UpcomingDistance: 20 * 3600, DueDistance: 5 * 3600}
+	}
+	return Thresholds{UpcomingDays: 30, DueDays: 7, UpcomingDistance: 1_500_000, DueDistance: 500_000}
+}
+
+// Item ist eine Definition in Rechenform (Distanzen kanonisch als Gesamtlaufleistung).
+type Item struct {
 	Mode         string
 	Months, Days int
-	Distance     int64
+	Distance     int64 // 0 = kein Distanzintervall
 	AnchorDate   *time.Time
 	AnchorTotal  *int64
 	DueDateOnce  *time.Time
 	DueTotalOnce *int64
-	Created      time.Time
 	Thresholds   Thresholds
 }
 
@@ -79,228 +93,243 @@ func SortCompletions(cs []Completion) {
 	})
 }
 
-// Env ist der Bewertungskontext.
+// Env ist die Lage zum Bewertungszeitpunkt.
 type Env struct {
-	Today     time.Time
-	Current   *int64                     // aktuelle Gesamtlaufleistung (ODO-04), nil = unbekannt
-	DailyRate float64                    // ODO-08, 0 = unbekannt
-	ValueAt   func(day time.Time) *int64 // ODO-06 am Tag 12:00
+	Today     time.Time // Kalenderdatum in owner_time_zone
+	Current   *int64    // aktuelle Gesamtlaufleistung (ODO-04), nil = unbekannt
+	DailyRate float64   // kanonische Einheiten je Tag (ODO-08)
+	RateKnown bool
 }
 
-// Status ist das Ergebnis MA-04 bis MA-07.
+// Status ist das Ergebnis der Bewertung (API DueStatus).
 type Status struct {
-	Level             string
-	Reason            string // time | distance | ""
-	DueDate           *time.Time
-	DaysRemaining     *int
-	DueTotal          *int64
-	DistanceRemaining *int64
-	EstimatedDate     *time.Time
-	Estimated         bool
+	Level         string
+	Reason        string // time | distance | ""
+	DueDate       *time.Time
+	DaysRemaining *int
+	DueTotal      *int64
+	Remaining     *int64 // Rest in kanonischen Einheiten
+	EstimatedDate *time.Time
+	Estimated     bool
 }
 
-// AddMonths addiert Monate; fehlt der Zieltag, gilt der Monatsletzte (MA-02).
-func AddMonths(d time.Time, n int) time.Time {
-	y, m := d.Year(), int(d.Month())-1+n
-	y += m / 12
-	m %= 12
-	if m < 0 {
-		m += 12
-		y--
-	}
-	last := time.Date(y, time.Month(m+2), 0, 0, 0, 0, 0, time.UTC).Day()
-	day := d.Day()
-	if day > last {
-		day = last
-	}
-	return time.Date(y, time.Month(m+1), day, 0, 0, 0, 0, time.UTC)
+type trigger struct {
+	kind      string
+	level     string
+	estimated *time.Time
 }
 
-func (d Def) hasTime() bool { return d.Months > 0 || d.Days > 0 }
-
-func (d Def) addTime(base time.Time, k int) time.Time {
-	if d.Months > 0 {
-		return AddMonths(base, k*d.Months)
+func (it Item) hasTime() bool {
+	if it.Mode == ModeOnce {
+		return it.DueDateOnce != nil
 	}
-	return base.AddDate(0, 0, k*d.Days)
+	return it.Months > 0 || it.Days > 0
 }
 
-func days(a, b time.Time) int { return int(a.Sub(b).Hours() / 24) }
+func (it Item) hasDistance() bool {
+	if it.Mode == ModeOnce {
+		return it.DueTotalOnce != nil
+	}
+	return it.Distance > 0
+}
 
-// gridIndex: nächster offener Rasterpunkt nach den Erledigungen (MA-02 fixed_grid).
-func gridIndex(values []int64, point func(k int) int64) int {
+func (it Item) datePoint(anchor time.Time, k int) time.Time {
+	if it.Months > 0 {
+		return kernel.AddMonths(anchor, k*it.Months)
+	}
+	return anchor.AddDate(0, 0, k*it.Days)
+}
+
+// largestDateK ist der größte Rasterindex k ≥ 0 mit g_k ≤ d, sonst −1.
+func (it Item) largestDateK(anchor, d time.Time) int {
+	if d.Before(anchor) {
+		return -1
+	}
+	var k int
+	if it.Months > 0 {
+		k = ((d.Year()-anchor.Year())*12 + int(d.Month()) - int(anchor.Month())) / it.Months
+	} else {
+		k = kernel.DaysBetween(anchor, d) / it.Days
+	}
+	for k > 0 && it.datePoint(anchor, k).After(d) {
+		k--
+	}
+	for !it.datePoint(anchor, k+1).After(d) {
+		k++
+	}
+	return k
+}
+
+// gridNext wertet die Erledigungen gegen das Raster aus (MA-02, fixed_grid):
+// jede Erledigung deckt max(nächster offener Punkt, größter Punkt ≤ Erledigung).
+func gridNext(largestK func(i int) int, n int) int {
 	next := 1
-	for _, v := range values {
-		kc := 0
-		for point(kc+1) <= v {
-			kc++
+	for i := 0; i < n; i++ {
+		c := largestK(i)
+		if c < next {
+			c = next
 		}
-		if kc > next {
-			next = kc
-		}
-		next++
+		next = c + 1
 	}
 	return next
 }
 
-// dueDate berechnet die nächste Fälligkeit nach Zeit (MA-02).
-func dueDate(d Def, cs []Completion) *time.Time {
-	if d.Mode == ModeOnce {
-		return d.DueDateOnce
-	}
-	if !d.hasTime() {
-		return nil
-	}
-	anchor := d.Created
-	if d.AnchorDate != nil {
-		anchor = *d.AnchorDate
-	}
-	if d.Mode == ModeGrid {
-		var vals []int64
-		for _, c := range cs {
-			vals = append(vals, c.On.Unix())
+// DueDate berechnet fällig_am (MA-02); nil = nicht bewertbar.
+func (it Item) DueDate(cs []Completion) *time.Time {
+	switch it.Mode {
+	case ModeOnce:
+		return it.DueDateOnce
+	case ModeFromLast:
+		var base *time.Time
+		if len(cs) > 0 {
+			b := cs[len(cs)-1].On
+			base = &b
+		} else {
+			base = it.AnchorDate
 		}
-		k := gridIndex(vals, func(k int) int64 { return d.addTime(anchor, k).Unix() })
-		t := d.addTime(anchor, k)
-		return &t
-	}
-	base := anchor
-	if len(cs) > 0 {
-		base = cs[len(cs)-1].On
-	}
-	t := d.addTime(base, 1)
-	return &t
-}
-
-// dueTotal berechnet die nächste Fälligkeit nach Distanz (MA-03).
-func dueTotal(d Def, cs []Completion, env Env) *int64 {
-	if d.Mode == ModeOnce {
-		return d.DueTotalOnce
-	}
-	if d.Distance <= 0 {
-		return nil
-	}
-	totalOf := func(c Completion) *int64 {
-		if c.Total != nil {
-			return c.Total
-		}
-		if env.ValueAt != nil {
-			return env.ValueAt(c.On)
-		}
-		return nil
-	}
-	if d.Mode == ModeGrid {
-		if d.AnchorTotal == nil {
+		if base == nil {
 			return nil
 		}
-		var vals []int64
-		for _, c := range cs {
-			if t := totalOf(c); t != nil {
-				vals = append(vals, *t)
-			}
+		d := it.datePoint(*base, 1)
+		return &d
+	case ModeFixedGrid:
+		if it.AnchorDate == nil {
+			return nil
 		}
-		k := gridIndex(vals, func(k int) int64 { return *d.AnchorTotal + int64(k)*d.Distance })
-		v := *d.AnchorTotal + int64(k)*d.Distance
+		a := *it.AnchorDate
+		next := gridNext(func(i int) int { return it.largestDateK(a, cs[i].On) }, len(cs))
+		d := it.datePoint(a, next)
+		return &d
+	}
+	return nil
+}
+
+// DueTotal berechnet fällig_bei (MA-03); Erledigungen ohne Stand müssen vorher
+// über ValueAt ergänzt sein. nil = nicht bewertbar.
+func (it Item) DueTotal(cs []Completion) *int64 {
+	switch it.Mode {
+	case ModeOnce:
+		return it.DueTotalOnce
+	case ModeFromLast:
+		var base *int64
+		if len(cs) > 0 {
+			base = cs[len(cs)-1].Total
+		} else {
+			base = it.AnchorTotal
+		}
+		if base == nil {
+			return nil
+		}
+		v := *base + it.Distance
+		return &v
+	case ModeFixedGrid:
+		if it.AnchorTotal == nil {
+			return nil
+		}
+		a := *it.AnchorTotal
+		next := gridNext(func(i int) int {
+			t := cs[i].Total
+			if t == nil || *t < a {
+				return -1
+			}
+			return int((*t - a) / it.Distance)
+		}, len(cs))
+		v := a + int64(next)*it.Distance
 		return &v
 	}
-	var base *int64
-	if len(cs) > 0 {
-		base = totalOf(cs[len(cs)-1])
-	} else {
-		base = d.AnchorTotal
-	}
-	if base == nil {
-		return nil
-	}
-	v := *base + d.Distance
-	return &v
+	return nil
 }
 
-func levelFor(rem, dueTh, upTh int64) string {
-	switch {
-	case rem < 0:
-		return LevelOverdue
-	case rem <= dueTh:
-		return LevelDue
-	case rem <= upTh:
-		return LevelUpcoming
-	}
-	return LevelOK
-}
-
-// Evaluate bewertet eine Definition (MA-01 bis MA-07). cs muss nach MA-01 sortiert sein.
-func Evaluate(d Def, cs []Completion, env Env) Status {
-	if d.Mode == ModeOnce && len(cs) > 0 {
+// Evaluate bewertet eine Definition (MA-04 bis MA-07). cs muss nach MA-01 sortiert sein.
+func Evaluate(it Item, cs []Completion, env Env) Status {
+	if it.Mode == ModeOnce && len(cs) > 0 {
 		return Status{Level: LevelCompleted}
 	}
-	st := Status{Level: LevelUnknown}
-	timeLevel, distLevel := "", ""
-	var timeEst, distEst *time.Time
-	if dd := dueDate(d, cs); dd != nil {
-		rem := days(*dd, env.Today)
-		st.DueDate, st.DaysRemaining = dd, &rem
-		timeLevel = levelFor(int64(rem), int64(d.Thresholds.DueDays), int64(d.Thresholds.UpcomingDays))
-		timeEst = dd
+	var st Status
+	var trigs []trigger
+	if it.hasTime() {
+		if due := it.DueDate(cs); due != nil {
+			rem := kernel.DaysBetween(env.Today, *due)
+			st.DueDate, st.DaysRemaining = due, &rem
+			lv := LevelOK
+			switch {
+			case env.Today.After(*due):
+				lv = LevelOverdue
+			case rem <= it.Thresholds.DueDays:
+				lv = LevelDue
+			case rem <= it.Thresholds.UpcomingDays:
+				lv = LevelUpcoming
+			}
+			d := *due
+			trigs = append(trigs, trigger{kind: TriggerTime, level: lv, estimated: &d})
+		}
 	}
-	if dt := dueTotal(d, cs, env); dt != nil {
-		st.DueTotal = dt
-		if env.Current != nil {
-			rem := *dt - *env.Current
-			st.DistanceRemaining = &rem
-			distLevel = levelFor(rem, d.Thresholds.DueDistance, d.Thresholds.UpcomingDistance)
-			if env.DailyRate > 0 {
-				dd := 0
-				if rem > 0 {
-					dd = int(float64(rem) / env.DailyRate)
+	if it.hasDistance() {
+		if due := it.DueTotal(cs); due != nil {
+			st.DueTotal = due
+			if env.Current != nil {
+				rem := *due - *env.Current
+				st.Remaining = &rem
+				lv := LevelOK
+				switch {
+				case *env.Current > *due:
+					lv = LevelOverdue
+				case rem <= it.Thresholds.DueDistance:
+					lv = LevelDue
+				case rem <= it.Thresholds.UpcomingDistance:
+					lv = LevelUpcoming
 				}
-				t := env.Today.AddDate(0, 0, dd)
-				distEst = &t
-			} else if rem < 0 {
-				t := env.Today
-				distEst = &t
+				t := trigger{kind: TriggerDistance, level: lv}
+				if env.RateKnown && env.DailyRate > 0 {
+					e := env.Today.AddDate(0, 0, int(math.Ceil(float64(rem)/env.DailyRate)))
+					t.estimated = &e
+				}
+				trigs = append(trigs, t)
 			}
 		}
 	}
-	switch {
-	case timeLevel == "" && distLevel == "":
+	if len(trigs) == 0 {
+		st.Level = LevelUnknown
 		return st
-	case distLevel == "" || (timeLevel != "" && Rank(timeLevel) > Rank(distLevel)):
-		st.Level, st.Reason = timeLevel, "time"
-	case timeLevel == "" || Rank(distLevel) > Rank(timeLevel):
-		st.Level, st.Reason = distLevel, "distance"
-	default: // gleiche Stufe: der Auslöser, der nach Prognose zuerst erreicht wird
-		st.Level, st.Reason = timeLevel, "time"
-		if distEst != nil && timeEst != nil && distEst.Before(*timeEst) {
-			st.Reason = "distance"
+	}
+	best := trigs[0]
+	for _, t := range trigs[1:] {
+		if Rank(t.level) > Rank(best.level) || (Rank(t.level) == Rank(best.level) && earlier(t.estimated, best.estimated)) {
+			best = t
 		}
 	}
-	// MA-07: geschätztes Datum = das frühere
-	switch {
-	case timeEst != nil && (distEst == nil || !distEst.Before(*timeEst)):
-		st.EstimatedDate = timeEst
-	case distEst != nil:
-		st.EstimatedDate, st.Estimated = distEst, true
+	st.Level, st.Reason = best.level, best.kind
+	// geschätztes Datum: das frühere der Auslöser (MA-07)
+	for _, t := range trigs {
+		if t.estimated != nil && (st.EstimatedDate == nil || t.estimated.Before(*st.EstimatedDate)) {
+			e := *t.estimated
+			st.EstimatedDate, st.Estimated = &e, t.kind == TriggerDistance
+		}
 	}
 	return st
 }
 
-// Item ist eine bewertete Definition für die Sortierung.
-type Item struct {
-	ID     uuid.UUID
+func earlier(a, b *time.Time) bool {
+	if a == nil {
+		return false
+	}
+	return b == nil || a.Before(*b)
+}
+
+// Ranked ist eine bewertete Definition für die Sortierung nach MA-07.
+type Ranked struct {
+	ItemID uuid.UUID
 	Status Status
 }
 
-// SortNextDue ordnet nach Stufe absteigend, dann geschätztem Datum (MA-07);
-// reine Distanzdefinitionen ohne Prognose stehen am Ende ihrer Stufe.
-func SortNextDue(items []Item) {
-	sort.SliceStable(items, func(i, j int) bool {
-		a, b := items[i].Status, items[j].Status
+// SortNextDue sortiert nach Stufe absteigend, dann geschätztem Datum aufsteigend;
+// Definitionen ohne Datum stehen am Ende ihrer Stufe (MA-07).
+func SortNextDue(rs []Ranked) {
+	sort.SliceStable(rs, func(i, j int) bool {
+		a, b := rs[i].Status, rs[j].Status
 		if Rank(a.Level) != Rank(b.Level) {
 			return Rank(a.Level) > Rank(b.Level)
 		}
-		if a.EstimatedDate == nil || b.EstimatedDate == nil {
-			return a.EstimatedDate != nil
-		}
-		return a.EstimatedDate.Before(*b.EstimatedDate)
+		return earlier(a.EstimatedDate, b.EstimatedDate)
 	})
 }

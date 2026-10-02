@@ -15,15 +15,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sh1su/vector/backend/internal/assistant"
+	"github.com/sh1su/vector/backend/internal/costs"
+	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
-	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/oil"
 	"github.com/sh1su/vector/backend/internal/platform/config"
 	"github.com/sh1su/vector/backend/internal/platform/db"
+	"github.com/sh1su/vector/backend/internal/platform/storage"
 	"github.com/sh1su/vector/backend/internal/server"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 	vstore "github.com/sh1su/vector/backend/internal/vehicles/store"
 )
@@ -63,47 +67,20 @@ func run(log *slog.Logger) error {
 		return odometer.HasReadings(ctx, q, id)
 	}
 	odo := odometer.NewService(pool, odometer.Config{VMaxKmh: cfg.OdometerVMaxKmh})
-	fu := fuel.NewService(pool, odo)
-	oi := oil.NewService(pool, odo)
-	ma := maintenance.NewService(pool, odo)
-	ma.UserSettings = ids.Settings
-	ma.InstallSettings = ids.Installation
-
-	var chat assistant.Chat
-	switch ac := cfg.Assistant; ac.Provider {
-	case "anthropic":
-		chat = assistant.NewAnthropic(ac.APIKey, ac.BaseURL, ac.Model, ac.Fallbacks, ac.Timeout)
-	case "openai_compatible":
-		chat = assistant.NewOpenAICompatible(ac.BaseURL, ac.APIKey, ac.Model, ac.Timeout)
-	}
-	as := assistant.NewService(pool, assistant.Deps{Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma,
-		Units: func(ctx context.Context, id uuid.UUID) kernel.Units {
-			st, _ := ids.Settings(ctx, id)
-			return kernel.UnitsFromSettings(st)
-		}}, chat, assistant.Config{Provider: cfg.Assistant.Provider, Name: cfg.Assistant.Name, Model: cfg.Assistant.Model,
-		External: cfg.Assistant.External, DailyLimit: cfg.Assistant.DailyLimit, RetentionDays: cfg.Assistant.RetentionDays}, log)
-	as.Installation = ids.Installation
-	if chat != nil {
-		log.Info("assistant provider configured", "provider", cfg.Assistant.Provider, "name", cfg.Assistant.Name, "model", cfg.Assistant.Model, "external", cfg.Assistant.External)
-		go func() { // Aufbewahrungsfrist der Unterhaltungen (ADR-024)
-			t := time.NewTicker(time.Hour)
-			defer t.Stop()
-			for {
-				if n, err := as.Cleanup(ctx); err == nil && n > 0 {
-					log.Info("assistant conversations removed", "count", n)
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-				}
-			}
-		}()
+	deps := server.Deps{Identity: ids, Vehicles: veh, Odometer: odo, Costs: costs.NewService(pool, odo),
+		Maintenance: maintenance.NewService(pool, odo), Service: servicehistory.NewService(pool, odo), Trips: trips.NewService(pool, odo),
+		Documents: documents.NewService(pool, storage.Local{Dir: cfg.StorageDir}, int64(cfg.MaxUploadMB)<<20),
+		Assistant: assistant.NewService(pool, assistant.Config{Provider: cfg.Assistant.Provider, APIKey: cfg.Assistant.APIKey, Model: cfg.Assistant.Model,
+			BaseURL: cfg.Assistant.BaseURL, WebSearch: cfg.Assistant.WebSearch, DailyLimit: cfg.Assistant.DailyLimit, RetentionDays: cfg.Assistant.RetentionDays}),
+		Fuel: fuel.NewService(pool, odo), Oil: oil.NewService(pool, odo),
+		Log: log, CookieSecure: cfg.CookieSecure, WebDir: cfg.WebDir}
+	if cfg.Assistant.Provider != "" {
+		log.Info("Assistent aktiv", "provider", cfg.Assistant.Provider, "model", cfg.Assistant.Model, "web_search", cfg.Assistant.WebSearch)
 	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.Handler(server.Deps{Identity: ids, Vehicles: veh, Odometer: odo, Fuel: fu, Oil: oi, Maintenance: ma, Assistant: as, Log: log, CookieSecure: cfg.CookieSecure, OdometerVMaxKmh: cfg.OdometerVMaxKmh, WebDir: cfg.WebDir}),
+		Handler:           server.Handler(deps),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,

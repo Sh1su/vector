@@ -1,141 +1,87 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Schemas } from '../api/client'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import { useNavigate } from 'react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, request, type Schemas } from '../api/client'
 import { Header } from '../components/Header'
 import { Icon, type IconName } from '../components/Icon'
-import { Button, Card, Chip, Field, inputClass } from '../components/ui'
-import { fmtDate, num } from '../lib/format'
-import { problemText } from '../lib/mutation'
+import { Button, Card, CardTitle, Chip, Field, inputClass } from '../components/ui'
+import { fmtDate } from '../lib/format'
+import { errorText, parseNumber } from '../lib/money'
 import { useApp, type Account } from '../lib/state'
-import { ConsentCard, useAssistantStatus } from './Assistant'
 
-type UserSettings = Schemas['UserSettings']
-type Install = Schemas['InstallationSettings']
+type Settings = Schemas['UserSettings']
+type Session = Schemas['Session']
 
-function Section({ icon, title, children, sub }: { icon: IconName; title: string; sub?: string; children: ReactNode }) {
+const currencies = ['EUR', 'CHF', 'USD', 'GBP', 'PLN', 'CZK', 'SEK', 'DKK', 'NOK', 'HUF']
+
+function zones(): string[] {
+  try {
+    return (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf('timeZone')
+  } catch {
+    return ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'UTC']
+  }
+}
+
+function Section({ icon, title, sub, children }: { icon: IconName; title: string; sub?: string; children: ReactNode }) {
   return (
-    <Card className="flex flex-col gap-4 p-5">
+    <Card className="flex flex-col gap-4 p-6">
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-info-bg text-link"><Icon name={icon} /></div>
-        <div className="flex flex-col gap-0.5"><h2 className="m-0 font-display text-base font-semibold">{title}</h2>{sub && <div className="text-[13px] text-muted">{sub}</div>}</div>
+        <div className="flex flex-col gap-0.5">
+          <CardTitle>{title}</CardTitle>
+          {sub && <div className="text-[13px] text-muted">{sub}</div>}
+        </div>
       </div>
       {children}
     </Card>
   )
 }
 
-function useSaver() {
-  const [state, setState] = useState<{ busy: boolean; msg?: string; error?: string }>({ busy: false })
-  return {
-    ...state,
-    run: async (fn: () => Promise<unknown>, msg = 'Gespeichert.') => {
-      setState({ busy: true })
-      try { await fn(); setState({ busy: false, msg }) } catch (e) { setState({ busy: false, error: problemText(e) }) }
-    },
-  }
-}
-
-function Feedback({ s }: { s: { msg?: string; error?: string } }) {
-  if (s.error) return <div role="alert" className="text-sm font-semibold text-bad">{s.error}</div>
-  if (s.msg) return <div role="status" className="text-sm font-semibold text-ok">{s.msg}</div>
+function Saved({ ok, error }: { ok: boolean; error?: string }) {
+  if (error) return <div role="alert" className="text-sm font-semibold text-bad">{error}</div>
+  if (ok) return <div role="status" className="flex items-center gap-1.5 text-sm font-semibold text-ok"><Icon name="check" size={16} />Gespeichert</div>
   return null
 }
 
-const select = (id: string, value: string, onChange: (v: string) => void, options: [string, string][]) => (
-  <select id={id} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-)
-
 export function SettingsPage() {
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me') }).data
+  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me') })
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Settings>('/me/settings') })
   return (
     <>
-      <Header title="Einstellungen" sub={me ? `${me.display_name} · ${me.email}` : undefined} />
-      <main className="grid min-h-0 flex-grow grid-cols-1 items-start gap-5 overflow-y-auto px-8 py-6 xl:grid-cols-2">
-        <div className="flex flex-col gap-5">
-          <ProfileSection me={me} />
-          <UnitsSection />
-          <AssistantSection />
-        </div>
-        <div className="flex flex-col gap-5">
+      <Header title="Einstellungen" sub="Konto, Darstellung, Vorgaben und angemeldete Geräte" />
+      <main className="flex min-h-0 flex-grow flex-col overflow-y-auto px-8 py-6">
+        <div className="grid max-w-[1100px] grid-cols-1 gap-5 xl:grid-cols-2">
+          {me.data && <ProfileSection me={me.data} />}
           <PasswordSection />
+          <AppearanceSection />
+          {settings.data && <DefaultsSection settings={settings.data} />}
+          {settings.data && <ThresholdsSection settings={settings.data} />}
           <SessionsSection />
-          <ApiTokensSection />
-          {me?.is_admin && <InstallationSection />}
+          <TokensSection />
         </div>
       </main>
     </>
   )
 }
 
-function ProfileSection({ me }: { me?: Account }) {
+function ProfileSection({ me }: { me: Account }) {
   const qc = useQueryClient()
-  const { theme, setTheme } = useApp()
-  const [name, setName] = useState('')
-  useEffect(() => { if (me) setName(me.display_name) }, [me])
-  const s = useSaver()
+  const [name, setName] = useState(me.display_name)
+  const save = useMutation({
+    mutationFn: () => request<Account>('PATCH', '/me', { display_name: name.trim() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  })
   return (
-    <Section icon="user" title="Profil">
-      <form className="flex flex-col gap-4" onSubmit={(e: FormEvent) => { e.preventDefault(); s.run(async () => { await api.patch('/me', { display_name: name }, '*'); qc.invalidateQueries({ queryKey: ['me'] }) }) }}>
-        <Field label="Anzeigename" htmlFor="p-name"><input id="p-name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Darstellung" htmlFor="p-theme">{select('p-theme', theme, (v) => setTheme(v as typeof theme), [['system', 'wie das System'], ['light', 'hell'], ['dark', 'dunkel']])}</Field>
-        <Feedback s={s} />
-        <Button type="submit" disabled={s.busy || !name.trim()} className="self-start">Speichern</Button>
-      </form>
-    </Section>
-  )
-}
-
-function UnitsSection() {
-  const qc = useQueryClient()
-  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get<UserSettings>('/me/settings') })
-  const [f, setF] = useState<Record<string, string>>({})
-  useEffect(() => {
-    const st = settings.data
-    if (!st) return
-    const du = st.display_units ?? {}
-    const th = st.maintenance_thresholds ?? {}
-    setF({ time_zone: st.time_zone ?? 'Europe/Berlin', currency: st.default_currency ?? 'EUR', distance: du.distance ?? 'km', volume: du.volume ?? 'l',
-      consumption: du.consumption ?? 'l_per_100km', electric: du.electric_consumption ?? 'kwh_per_100km', oil: du.oil_volume ?? 'l',
-      upDays: th.upcoming_days?.toString() ?? '', dueDays: th.due_days?.toString() ?? '',
-      upKm: th.upcoming_distance ? String(th.upcoming_distance.value) : '', dueKm: th.due_distance ? String(th.due_distance.value) : '' })
-  }, [settings.data])
-  const s = useSaver()
-  const set = (k: string) => (v: string) => setF({ ...f, [k]: v })
-  function save(e: FormEvent) {
-    e.preventDefault()
-    const q = (v: string) => (v ? { value: num(v), unit: f.distance } : null)
-    s.run(async () => {
-      await api.patch('/me/settings', {
-        time_zone: f.time_zone, default_currency: f.currency.toUpperCase(),
-        display_units: { distance: f.distance, volume: f.volume, consumption: f.consumption, electric_consumption: f.electric, oil_volume: f.oil },
-        maintenance_thresholds: { upcoming_days: f.upDays ? Number(f.upDays) : null, due_days: f.dueDays ? Number(f.dueDays) : null, upcoming_distance: q(f.upKm), due_distance: q(f.dueKm) },
-      }, '*')
-      qc.invalidateQueries()
-    })
-  }
-  if (!f.distance) return <Section icon="gauge" title="Einheiten und Vorgaben"><div className="text-sm text-muted">Lade …</div></Section>
-  return (
-    <Section icon="gauge" title="Einheiten und Vorgaben" sub="Betrifft nur die Anzeige; gespeichert wird immer in SI-Einheiten mit Originaleingabe.">
-      <form className="flex flex-col gap-4" onSubmit={save}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Strecke" htmlFor="u-dist">{select('u-dist', f.distance, set('distance'), [['km', 'Kilometer'], ['mi', 'Meilen']])}</Field>
-          <Field label="Volumen" htmlFor="u-vol">{select('u-vol', f.volume, set('volume'), [['l', 'Liter'], ['gal_us', 'Gallonen (US)'], ['gal_imp', 'Gallonen (UK)']])}</Field>
-          <Field label="Verbrauch" htmlFor="u-cons">{select('u-cons', f.consumption, set('consumption'), [['l_per_100km', 'l/100 km'], ['km_per_l', 'km/l'], ['mpg_us', 'mpg (US)'], ['mpg_uk', 'mpg (UK)']])}</Field>
-          <Field label="Stromverbrauch" htmlFor="u-el">{select('u-el', f.electric, set('electric'), [['kwh_per_100km', 'kWh/100 km'], ['km_per_kwh', 'km/kWh'], ['mi_per_kwh', 'mi/kWh']])}</Field>
-          <Field label="Ölmenge" htmlFor="u-oil">{select('u-oil', f.oil, set('oil'), [['ml', 'Milliliter'], ['l', 'Liter'], ['qt_us', 'Quart (US)'], ['qt_imp', 'Quart (UK)']])}</Field>
-          <Field label="Zeitzone" htmlFor="u-tz"><input id="u-tz" className={inputClass} value={f.time_zone} onChange={(e) => set('time_zone')(e.target.value)} /></Field>
-          <Field label="Währung" htmlFor="u-cur" hint="ISO 4217, z. B. EUR"><input id="u-cur" maxLength={3} className={inputClass + ' uppercase'} value={f.currency} onChange={(e) => set('currency')(e.target.value)} /></Field>
+    <Section icon="user" title="Profil" sub="So erscheinst du bei geteilten Fahrzeugen">
+      <form className="flex flex-col gap-4" onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }}>
+        <Field label="Anzeigename" htmlFor="s-name"><input id="s-name" required maxLength={100} className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="E-Mail" htmlFor="s-mail" hint="Die Anmeldeadresse ändert ein Administrator.">
+          <input id="s-mail" readOnly className={`${inputClass} bg-soft text-muted`} value={me.email} />
+        </Field>
+        <div className="flex items-center justify-between gap-3">
+          <Saved ok={save.isSuccess} error={save.error ? errorText(save.error) : undefined} />
+          <Button type="submit" disabled={save.isPending || !name.trim() || name.trim() === me.display_name}>Speichern</Button>
         </div>
-        <div className="text-sm font-semibold">Wartung: ab wann „demnächst“ bzw. „fällig“</div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="demnächst (Tage)" htmlFor="u-ud"><input id="u-ud" inputMode="numeric" className={inputClass} value={f.upDays} onChange={(e) => set('upDays')(e.target.value)} placeholder="30" /></Field>
-          <Field label="fällig (Tage)" htmlFor="u-dd"><input id="u-dd" inputMode="numeric" className={inputClass} value={f.dueDays} onChange={(e) => set('dueDays')(e.target.value)} placeholder="7" /></Field>
-          <Field label={`demnächst (${f.distance})`} htmlFor="u-uk"><input id="u-uk" inputMode="decimal" className={inputClass} value={f.upKm} onChange={(e) => set('upKm')(e.target.value)} placeholder="1500" /></Field>
-          <Field label={`fällig (${f.distance})`} htmlFor="u-dk"><input id="u-dk" inputMode="decimal" className={inputClass} value={f.dueKm} onChange={(e) => set('dueKm')(e.target.value)} placeholder="500" /></Field>
-        </div>
-        <div className="text-xs text-muted">Leer = Vorgabe der Installation. Eigene Schwellen einer einzelnen Wartung haben Vorrang.</div>
-        <Feedback s={s} />
-        <Button type="submit" disabled={s.busy} className="self-start">Speichern</Button>
       </form>
     </Section>
   )
@@ -144,182 +90,267 @@ function UnitsSection() {
 function PasswordSection() {
   const [cur, setCur] = useState('')
   const [next, setNext] = useState('')
-  const [again, setAgain] = useState('')
-  const s = useSaver()
+  const [repeat, setRepeat] = useState('')
   const qc = useQueryClient()
+  const save = useMutation({
+    mutationFn: () => api.post('/me/password', { current_password: cur, new_password: next }),
+    onSuccess: () => { setCur(''); setNext(''); setRepeat(''); qc.invalidateQueries({ queryKey: ['sessions'] }) },
+  })
+  const mismatch = repeat !== '' && next !== repeat
   return (
-    <Section icon="lock" title="Passwort ändern" sub="Andere angemeldete Geräte werden dabei abgemeldet.">
-      <form className="flex flex-col gap-4" onSubmit={(e: FormEvent) => {
-        e.preventDefault()
-        s.run(async () => { await api.post('/me/password', { current_password: cur, new_password: next }); setCur(''); setNext(''); setAgain(''); qc.invalidateQueries({ queryKey: ['sessions'] }) }, 'Passwort geändert.')
-      }}>
-        <Field label="Aktuelles Passwort" htmlFor="pw-cur"><input id="pw-cur" type="password" autoComplete="current-password" required className={inputClass} value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
-        <Field label="Neues Passwort" htmlFor="pw-new" hint="mindestens 12 Zeichen"><input id="pw-new" type="password" autoComplete="new-password" required minLength={12} className={inputClass} value={next} onChange={(e) => setNext(e.target.value)} /></Field>
-        <Field label="Neues Passwort wiederholen" htmlFor="pw-again" error={again && again !== next ? 'Stimmt nicht überein.' : undefined}>
-          <input id="pw-again" type="password" autoComplete="new-password" required className={inputClass} value={again} onChange={(e) => setAgain(e.target.value)} /></Field>
-        <Feedback s={s} />
-        <Button type="submit" disabled={s.busy || next.length < 12 || next !== again} className="self-start">Passwort ändern</Button>
+    <Section icon="lock" title="Passwort ändern" sub="Danach werden alle anderen Geräte abgemeldet – auch die App">
+      <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+        <Field label="Bisheriges Passwort" htmlFor="p-cur"><input id="p-cur" type="password" autoComplete="current-password" required className={inputClass} value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Neues Passwort" htmlFor="p-new" hint="Mindestens 12 Zeichen">
+            <input id="p-new" type="password" autoComplete="new-password" required minLength={12} className={inputClass} value={next} onChange={(e) => setNext(e.target.value)} />
+          </Field>
+          <Field label="Wiederholen" htmlFor="p-rep" error={mismatch ? 'Stimmt nicht überein.' : undefined}>
+            <input id="p-rep" type="password" autoComplete="new-password" required className={inputClass} value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+          </Field>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Saved ok={save.isSuccess} error={save.error ? errorText(save.error) : undefined} />
+          <Button type="submit" disabled={save.isPending || !cur || next.length < 12 || next !== repeat}>Passwort ändern</Button>
+        </div>
       </form>
     </Section>
   )
+}
+
+function Choice<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
+      {options.map(([k, l]) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} onClick={() => onChange(k)}
+          className={`h-10 rounded-[10px] border px-4 text-sm font-semibold ${value === k ? 'border-teal bg-info-bg text-link' : 'border-line hover:bg-soft'}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AppearanceSection() {
+  const { theme, setTheme } = useApp()
+  return (
+    <Section icon="moon" title="Darstellung" sub="Gilt für diesen Browser">
+      <Choice label="Farbschema" value={theme} onChange={setTheme} options={[['system', 'Wie System'], ['light', 'Hell'], ['dark', 'Dunkel']]} />
+    </Section>
+  )
+}
+
+function usePatchSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: Settings) => request<Settings>('PATCH', '/me/settings', patch).then((r) => r.data),
+    onSuccess: (s) => { qc.setQueryData(['settings'], s); qc.invalidateQueries({ queryKey: ['maintenance'] }) },
+  })
+}
+
+function DefaultsSection({ settings }: { settings: Settings }) {
+  const save = usePatchSettings()
+  const [tz, setTz] = useState(settings.time_zone ?? 'Europe/Berlin')
+  const [cur, setCur] = useState(settings.default_currency ?? 'EUR')
+  const [dist, setDist] = useState<'km' | 'mi'>(settings.display_units?.distance ?? 'km')
+  const [vol, setVol] = useState<'l' | 'gal_us' | 'gal_imp'>(settings.display_units?.volume ?? 'l')
+  const [exifShow, setExifShow] = useState(!!settings.show_exif_location)
+  const [exifStore, setExifStore] = useState(!!settings.store_exif_location)
+  const list = zones()
+  return (
+    <Section icon="gear" title="Vorgaben" sub="Zeitzone, Währung und Einheiten für neue Einträge und die Anzeige">
+      <form className="flex flex-col gap-4" onSubmit={(e) => {
+        e.preventDefault()
+        save.mutate({ time_zone: tz, default_currency: cur, display_units: { distance: dist, volume: vol }, show_exif_location: exifShow, store_exif_location: exifStore })
+      }}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Zeitzone" htmlFor="d-tz">
+            <select id="d-tz" className={inputClass} value={tz} onChange={(e) => setTz(e.target.value)}>
+              {!list.includes(tz) && <option value={tz}>{tz}</option>}
+              {list.map((z) => <option key={z} value={z}>{z.replaceAll('_', ' ')}</option>)}
+            </select>
+          </Field>
+          <Field label="Währung" htmlFor="d-cur">
+            <select id="d-cur" className={inputClass} value={cur} onChange={(e) => setCur(e.target.value)}>
+              {[...new Set([cur, ...currencies])].map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold">Strecke</span>
+          <Choice label="Strecke" value={dist} onChange={setDist} options={[['km', 'Kilometer'], ['mi', 'Meilen']]} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold">Volumen</span>
+          <Choice label="Volumen" value={vol} onChange={setVol} options={[['l', 'Liter'], ['gal_us', 'Gallonen (US)'], ['gal_imp', 'Gallonen (UK)']]} />
+        </div>
+        <div className="flex flex-col gap-2 text-sm">
+          <span className="font-semibold">Fotos</span>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-teal" checked={exifStore} onChange={(e) => setExifStore(e.target.checked)} />Aufnahmeort aus Fotos speichern</label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-teal" checked={exifShow} onChange={(e) => setExifShow(e.target.checked)} />Aufnahmeort anzeigen</label>
+          <span className="text-xs text-muted">Vorschaubilder enthalten nie einen Standort; das Original sehen nur Bearbeiter.</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Saved ok={save.isSuccess} error={save.error ? errorText(save.error) : undefined} />
+          <Button type="submit" disabled={save.isPending}>Speichern</Button>
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+function ThresholdsSection({ settings }: { settings: Settings }) {
+  const save = usePatchSettings()
+  const t = settings.maintenance_thresholds
+  const [up, setUp] = useState(String(t?.upcoming_days ?? 30))
+  const [due, setDue] = useState(String(t?.due_days ?? 7))
+  const [upKm, setUpKm] = useState(String(t?.upcoming_distance?.value ?? 1500))
+  const [dueKm, setDueKm] = useState(String(t?.due_distance?.value ?? 500))
+  const n = (s: string) => { const v = parseNumber(s); return v === null || v < 0 ? null : Math.round(v) }
+  const valid = [up, due, upKm, dueKm].every((s) => n(s) !== null)
+  return (
+    <Section icon="wrench" title="Wartung" sub="Ab wann eine Wartung als „demnächst“ bzw. „fällig“ gilt – für alle deine Fahrzeuge">
+      <form className="flex flex-col gap-4" onSubmit={(e) => {
+        e.preventDefault()
+        save.mutate({ maintenance_thresholds: { upcoming_days: n(up), due_days: n(due), upcoming_distance: { value: n(upKm)!, unit: 'km' }, due_distance: { value: n(dueKm)!, unit: 'km' } } })
+      }}>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Demnächst ab … Tage vorher" htmlFor="t-up"><input id="t-up" inputMode="numeric" className={inputClass} value={up} onChange={(e) => setUp(e.target.value)} /></Field>
+          <Field label="oder … km vorher" htmlFor="t-upkm"><input id="t-upkm" inputMode="numeric" className={inputClass} value={upKm} onChange={(e) => setUpKm(e.target.value)} /></Field>
+          <Field label="Fällig ab … Tage vorher" htmlFor="t-due"><input id="t-due" inputMode="numeric" className={inputClass} value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+          <Field label="oder … km vorher" htmlFor="t-duekm"><input id="t-duekm" inputMode="numeric" className={inputClass} value={dueKm} onChange={(e) => setDueKm(e.target.value)} /></Field>
+        </div>
+        <div className="text-xs text-muted">Eine Wartung mit eigenen Schwellen behält diese. Für Fahrzeuge anderer Halter gelten deren Vorgaben.</div>
+        <div className="flex items-center justify-between gap-3">
+          <Saved ok={save.isSuccess} error={save.error ? errorText(save.error) : undefined} />
+          <Button type="submit" disabled={save.isPending || !valid}>Speichern</Button>
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+function deviceLabel(s: Session) {
+  if (s.client_kind === 'android') return 'Android-App'
+  const ua = s.user_agent ?? ''
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser'
+  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : ''
+  return os ? `${browser} auf ${os}` : browser
 }
 
 function SessionsSection() {
   const qc = useQueryClient()
-  const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.get<{ items: Schemas['Session'][] }>('/me/sessions') })
-  async function revoke(id: string) {
-    await api.del(`/me/sessions/${id}`, '*')
-    qc.invalidateQueries({ queryKey: ['sessions'] })
-  }
+  const navigate = useNavigate()
+  const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.get<{ items: Session[] }>('/me/sessions'), refetchInterval: 60_000 })
+  const [error, setError] = useState<string>()
+  const revoke = useMutation({
+    mutationFn: (s: Session) => request('DELETE', `/me/sessions/${s.id}`).then(() => s),
+    onSuccess: (s) => {
+      if (s.current) { qc.clear(); navigate('/login'); return }
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+    onError: (e) => setError(errorText(e)),
+  })
+  const items = sessions.data?.items ?? []
   return (
-    <Section icon="key" title="Angemeldete Geräte">
+    <Section icon="key" title="Angemeldete Geräte" sub="Die App bleibt bis zu einem Jahr angemeldet, solange sie mindestens alle 90 Tage genutzt wird">
       <div className="flex flex-col">
-        {(sessions.data?.items ?? []).map((x) => (
-          <div key={x.id} className="flex items-center gap-3 border-t border-line py-2.5 first:border-t-0">
-            <div className="flex min-w-0 flex-grow flex-col gap-0.5">
-              <div className="flex items-center gap-2 text-sm font-semibold">{x.client_kind === 'android' ? 'Android-App' : 'Browser'}{x.current && <Chip tone="ok">dieses Gerät</Chip>}</div>
-              <div className="truncate text-xs text-muted">{x.user_agent || 'unbekannt'} · zuletzt {x.last_seen_at ? fmtDate(x.last_seen_at) : '–'}</div>
+        {items.map((s, i) => (
+          <div key={s.id} className={`flex items-center gap-3 py-3 ${i ? 'border-t border-line' : ''}`}>
+            <span className="text-muted"><Icon name={s.client_kind === 'android' ? 'gauge' : 'home'} /></span>
+            <div className="flex min-w-0 flex-grow flex-col">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">{deviceLabel(s)}{s.current && <Chip tone="ok">Dieses Gerät</Chip>}</div>
+              <div className="text-xs text-muted">Zuletzt aktiv {s.last_seen_at ? fmtDate(s.last_seen_at) : '–'} · angemeldet {fmtDate(s.created_at)}</div>
             </div>
-            {!x.current && <Button variant="outline" onClick={() => revoke(x.id)}>Abmelden</Button>}
+            <Button variant="outline" disabled={revoke.isPending} onClick={() => revoke.mutate(s)}>{s.current ? 'Abmelden' : 'Beenden'}</Button>
           </div>
         ))}
+        {error && <div role="alert" className="text-sm font-semibold text-bad">{error}</div>}
       </div>
     </Section>
   )
 }
 
-function AssistantSection() {
-  const status = useAssistantStatus().data
-  const qc = useQueryClient()
-  if (!status?.enabled) return null
-  return (
-    <Section icon="sparkles" title="Assistent" sub={status.chat_provider ? `Anbieter: ${status.chat_provider.name}${status.chat_provider.external ? ' (extern)' : ' (lokal)'}` : undefined}>
-      {status.user_enabled ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm">Eingeschaltet{status.consent_given_at ? ` seit ${fmtDate(status.consent_given_at, true)}` : ''}.</div>
-          <Button variant="outline" onClick={async () => { await api.del('/assistant/consent', '*'); qc.invalidateQueries({ queryKey: ['assistant'] }) }}>Ausschalten</Button>
-        </div>
-      ) : <ConsentCard status={status} />}
-    </Section>
-  )
-}
+type ApiToken = Schemas['ApiToken']
 
-function InstallationSection() {
-  const qc = useQueryClient()
-  const inst = useQuery({ queryKey: ['installation'], queryFn: () => api.get<Install>('/admin/settings') })
-  const status = useAssistantStatus().data
-  const [f, setF] = useState<Record<string, string>>({})
-  const [assistant, setAssistant] = useState(false)
-  useEffect(() => {
-    const i = inst.data
-    if (!i) return
-    const th = i.default_thresholds ?? {}
-    setAssistant(!!i.assistant_enabled)
-    setF({ upDays: th.upcoming_days?.toString() ?? '', dueDays: th.due_days?.toString() ?? '', upKm: th.upcoming_distance ? String(th.upcoming_distance.value) : '',
-      dueKm: th.due_distance ? String(th.due_distance.value) : '', retention: i.retention_days?.toString() ?? '30' })
-  }, [inst.data])
-  const s = useSaver()
-  const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
-  function save(e: FormEvent) {
-    e.preventDefault()
-    const q = (v: string) => (v ? { value: num(v), unit: 'km' } : null)
-    s.run(async () => {
-      await api.patch('/admin/settings', { assistant_enabled: assistant, retention_days: Number(f.retention) || 30,
-        default_thresholds: { upcoming_days: f.upDays ? Number(f.upDays) : null, due_days: f.dueDays ? Number(f.dueDays) : null, upcoming_distance: q(f.upKm), due_distance: q(f.dueKm) } }, '*')
-      qc.invalidateQueries()
-    })
-  }
-  return (
-    <Section icon="gear" title="Installation" sub="Nur für Administratoren. Gilt für alle Konten.">
-      {!inst.data ? <div className="text-sm text-muted">Lade …</div> : (
-        <form className="flex flex-col gap-4" onSubmit={save}>
-          <label className="flex items-start gap-2.5 text-sm">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal" checked={assistant} disabled={!status?.chat_provider} onChange={(e) => setAssistant(e.target.checked)} />
-            <span><b>KI-Assistent aktivieren</b><br /><span className="text-muted">{status?.chat_provider
-              ? `Anbieter: ${status.chat_provider.name} (${status.chat_provider.external ? 'extern – jede Person muss zustimmen' : 'lokal'}).`
-              : 'Kein Anbieter konfiguriert (VECTRA_ASSISTANT_PROVIDER, siehe deploy/README.md).'}</span></span>
-          </label>
-          <div className="text-sm font-semibold">Vorgaben für Wartungsschwellen</div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="demnächst (Tage)" htmlFor="i-ud"><input id="i-ud" inputMode="numeric" className={inputClass} value={f.upDays ?? ''} onChange={set('upDays')} /></Field>
-            <Field label="fällig (Tage)" htmlFor="i-dd"><input id="i-dd" inputMode="numeric" className={inputClass} value={f.dueDays ?? ''} onChange={set('dueDays')} /></Field>
-            <Field label="demnächst (km)" htmlFor="i-uk"><input id="i-uk" inputMode="decimal" className={inputClass} value={f.upKm ?? ''} onChange={set('upKm')} /></Field>
-            <Field label="fällig (km)" htmlFor="i-dk"><input id="i-dk" inputMode="decimal" className={inputClass} value={f.dueKm ?? ''} onChange={set('dueKm')} /></Field>
-          </div>
-          <Field label="Aufbewahrung (Tage)" htmlFor="i-ret"><input id="i-ret" inputMode="numeric" className={inputClass + ' max-w-[160px]'} value={f.retention ?? ''} onChange={set('retention')} /></Field>
-          <div className="text-xs text-muted">Plausibilitätsgrenze Kilometerstand: {inst.data.odometer_v_max_kmh} km/h (Server-Konfiguration).</div>
-          <Feedback s={s} />
-          <Button type="submit" disabled={s.busy} className="self-start">Speichern</Button>
-        </form>
-      )}
-    </Section>
-  )
-}
-
-const scopeLabel: Record<string, string> = { 'vehicles:read': 'Lesen', 'entries:write': 'Einträge anlegen/ändern', 'entries:delete': 'Einträge löschen', 'sharing:manage': 'Freigaben', admin: 'Administration' }
-
-function ApiTokensSection() {
+/** KI-Zugang: persönliche API-Tokens für den MCP-Server (ADR-032). */
+function TokensSection() {
   const qc = useQueryClient()
   const { vehicles } = useApp()
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Account>('/me') }).data
-  const tokens = useQuery({ queryKey: ['api-tokens'], queryFn: () => api.get<{ items: Schemas['ApiToken'][] }>('/me/api-tokens') })
-  const [name, setName] = useState('')
-  const [scopes, setScopes] = useState<string[]>(['vehicles:read'])
-  const [days, setDays] = useState('365')
-  const [vehicle, setVehicle] = useState('')
-  const [created, setCreated] = useState<string>()
-  const s = useSaver()
-  function create(e: FormEvent) {
-    e.preventDefault()
-    s.run(async () => {
-      const t = await api.post<Schemas['ApiToken']>('/me/api-tokens', { name, scopes, expires_at: new Date(Date.now() + Number(days) * 86400000).toISOString(), vehicle_ids: vehicle ? [vehicle] : null })
-      setCreated(t.token)
-      setName('')
-      qc.invalidateQueries({ queryKey: ['api-tokens'] })
-    }, 'Token angelegt.')
-  }
-  async function revoke(id: string) {
-    if (!confirm('Token widerrufen? Programme, die es nutzen, verlieren sofort den Zugriff.')) return
-    await api.del(`/me/api-tokens/${id}`, '*')
-    qc.invalidateQueries({ queryKey: ['api-tokens'] })
-  }
-  const toggle = (sc: string) => setScopes(scopes.includes(sc) ? scopes.filter((x) => x !== sc) : [...scopes, sc])
+  const tokens = useQuery({ queryKey: ['api-tokens'], queryFn: () => api.get<{ items: ApiToken[] }>('/me/api-tokens') })
+  const [name, setName] = useState('Claude Desktop')
+  const [write, setWrite] = useState(true)
+  const [days, setDays] = useState(90)
+  const [only, setOnly] = useState<string>('')
+  const [created, setCreated] = useState<ApiToken | null>(null)
+  const [copied, setCopied] = useState(false)
+  const create = useMutation({
+    mutationFn: () => api.post<ApiToken>('/me/api-tokens', {
+      name: name.trim(), scopes: write ? ['vehicles:read', 'entries:write'] : ['vehicles:read'],
+      vehicle_ids: only ? [only] : null, expires_at: new Date(Date.now() + days * 86400_000).toISOString(),
+    }),
+    onSuccess: (t) => { setCreated(t); setCopied(false); qc.invalidateQueries({ queryKey: ['api-tokens'] }) },
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => request('DELETE', `/me/api-tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-tokens'] }),
+  })
+  const url = `${location.origin}/api/v1/mcp`
+  const config = created ? JSON.stringify({ mcpServers: { vectra: { type: 'http', url, headers: { Authorization: `Bearer ${created.token}` } } } }, null, 2) : ''
+  const cli = created ? `claude mcp add --transport http vectra ${url} --header "Authorization: Bearer ${created.token}"` : ''
   return (
-    <Section icon="key" title="API-Tokens" sub="Für Skripte und andere Programme: Daten per REST-API abrufen (Authorization: Bearer …). Doku: docs/api.md">
-      {created && (
-        <div role="status" className="flex flex-col gap-2 rounded-[12px] border-[1.5px] border-amber bg-warn-bg p-3.5 text-sm">
-          <b>Neues Token – wird nur jetzt angezeigt:</b>
-          <code className="rounded-[8px] bg-card px-2 py-1.5 text-xs break-all select-all">{created}</code>
-          <button type="button" className="self-start text-xs font-semibold text-link" onClick={() => { navigator.clipboard?.writeText(created); setCreated(undefined) }}>Kopieren und ausblenden</button>
-        </div>
-      )}
-      <form className="flex flex-col gap-3" onSubmit={create}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Field label="Name" htmlFor="t-name"><input id="t-name" required className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Home Assistant" /></Field>
-          <Field label="Gültig (Tage)" htmlFor="t-days"><input id="t-days" inputMode="numeric" className={inputClass} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
-          <Field label="Fahrzeug" htmlFor="t-veh">{select('t-veh', vehicle, setVehicle, [['', 'alle'], ...vehicles.map((v) => [v.id, v.display_name] as [string, string])])}</Field>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(scopeLabel).filter(([k]) => k !== 'admin' || me?.is_admin).map(([k, l]) => (
-            <label key={k} className="flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-sm">
-              <input type="checkbox" className="h-4 w-4 accent-teal" checked={scopes.includes(k)} onChange={() => toggle(k)} />{l}
-            </label>
-          ))}
-        </div>
-        <Feedback s={s} />
-        <Button type="submit" disabled={s.busy || !name.trim() || scopes.length === 0} className="self-start">Token anlegen</Button>
-      </form>
+    <Section icon="sparkles" title="KI-Zugang (MCP)" sub="Persönliche Tokens für Claude Desktop, Claude Code und andere MCP-Clients sowie für die REST-API (Skripte, Home Assistant; docs/api.md)">
       <div className="flex flex-col">
-        {(tokens.data?.items ?? []).map((t) => (
-          <div key={t.id} className="flex items-center gap-3 border-t border-line py-2.5">
-            <div className="flex min-w-0 flex-grow flex-col gap-0.5">
-              <div className="text-sm font-semibold">{t.name}</div>
-              <div className="truncate text-xs text-muted">{t.scopes.map((x) => scopeLabel[x] ?? x).join(', ')} · bis {fmtDate(t.expires_at, true)} · {t.last_used_at ? `zuletzt ${fmtDate(t.last_used_at)}` : 'nie benutzt'}</div>
+        {(tokens.data?.items ?? []).map((t, i) => (
+          <div key={t.id} className={`flex items-center gap-3 py-3 ${i ? 'border-t border-line' : ''}`}>
+            <span className="text-muted"><Icon name="key" /></span>
+            <div className="flex min-w-0 flex-grow flex-col">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">{t.name}
+                <Chip tone={t.scopes.includes('entries:write') ? 'warn' : 'info'}>{t.scopes.includes('entries:write') ? 'Lesen + Schreiben' : 'Nur lesen'}</Chip>
+              </div>
+              <div className="text-xs text-muted">gültig bis {fmtDate(t.expires_at, true)} · zuletzt genutzt {t.last_used_at ? fmtDate(t.last_used_at) : 'nie'}</div>
             </div>
-            <Button variant="outline" onClick={() => revoke(t.id!)}>Widerrufen</Button>
+            <Button variant="outline" disabled={revoke.isPending} onClick={() => revoke.mutate(t.id!)}>Widerrufen</Button>
           </div>
         ))}
       </div>
+      {created ? (
+        <div className="flex flex-col gap-3 rounded-[12px] bg-ok-bg p-4 text-[13px]">
+          <div className="font-semibold text-ok">Token erstellt – es wird nur jetzt angezeigt.</div>
+          <code className="block break-all rounded-[8px] bg-card px-3 py-2 text-text">{created.token}</code>
+          <div className="text-text">Claude Code:</div>
+          <code className="block break-all rounded-[8px] bg-card px-3 py-2 text-text">{cli}</code>
+          <div className="text-text">MCP-Konfiguration (Clients mit HTTP-Transport):</div>
+          <pre className="m-0 overflow-x-auto rounded-[8px] bg-card px-3 py-2 text-text">{config}</pre>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { void navigator.clipboard?.writeText(created.token ?? ''); setCopied(true) }}>{copied ? 'Kopiert' : 'Token kopieren'}</Button>
+            <Button variant="ghost" onClick={() => setCreated(null)}>Fertig</Button>
+          </div>
+        </div>
+      ) : (
+        <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); create.mutate() }}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Name" htmlFor="t-name"><input id="t-name" required maxLength={100} className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Gültig" htmlFor="t-days">
+              <select id="t-days" className={inputClass} value={days} onChange={(e) => setDays(Number(e.target.value))}>
+                <option value={30}>30 Tage</option><option value={90}>90 Tage</option><option value={365}>1 Jahr</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Fahrzeuge" htmlFor="t-veh">
+            <select id="t-veh" className={inputClass} value={only} onChange={(e) => setOnly(e.target.value)}>
+              <option value="">Alle meine Fahrzeuge</option>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>Nur {v.display_name}</option>)}
+            </select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-teal" checked={write} onChange={(e) => setWrite(e.target.checked)} />
+            Einträge anlegen erlauben (Kilometerstand, Fahrten, Kosten …); der Client fragt vor jedem Aufruf nach</label>
+          <div className="flex items-center justify-between gap-3">
+            <Saved ok={false} error={create.error ? errorText(create.error) : undefined} />
+            <Button type="submit" icon="plus" disabled={create.isPending || !name.trim()}>Token erstellen</Button>
+          </div>
+        </form>
+      )}
     </Section>
   )
 }

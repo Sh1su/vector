@@ -58,3 +58,66 @@ fun OutboxEntry.statusLabel(): String = when (status) {
     OutboxStatus.CONFLICT -> "Konflikt"
     OutboxStatus.FAILED -> "nicht gesendet"
 }
+
+// --- Wartung, Service, Kosten, Fahrten, Dokumente (abgestimmt mit web/src/pages/*.tsx) ---
+
+fun levelLabel(level: String): String = when (level) {
+    "overdue" -> "Überfällig"
+    "due" -> "Fällig"
+    "upcoming" -> "Demnächst"
+    "ok" -> "In Ordnung"
+    "completed" -> "Erledigt"
+    else -> "Noch offen"
+}
+
+fun levelChip(level: String): app.vectra.android.ui.ChipKind = when (level) {
+    "overdue" -> app.vectra.android.ui.ChipKind.Bad
+    "due" -> app.vectra.android.ui.ChipKind.Warn
+    "ok", "completed" -> app.vectra.android.ui.ChipKind.Ok
+    else -> app.vectra.android.ui.ChipKind.Info
+}
+
+private val isoDay = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+fun day(iso: String): String = runCatching { isoDay.format(java.time.LocalDate.parse(iso.take(10))) }.getOrDefault(iso)
+
+/** Kurzbeschreibung der Fälligkeit, z. B. „am 10.03.2027 · noch 1.300 km“. */
+fun app.vectra.core.model.DueStatus.dueText(): String {
+    val parts = mutableListOf<String>()
+    dueDate?.let { parts += (if ((daysRemaining ?: 0) < 0) "seit " else "am ") + day(it) }
+    distanceRemaining?.let {
+        parts += if (it.value < 0) Format.number(-it.value, 0) + " ${it.unit} drüber" else "noch " + Format.number(it.value, 0) + " ${it.unit}"
+    }
+    estimatedDueDate?.takeIf { estimated }?.let { parts += "voraussichtlich " + day(it) }
+    return parts.joinToString(" · ").ifBlank { if (level == "unknown") "Letzte Durchführung im Web eintragen" else "" }
+}
+
+fun serviceKindLabel(kind: String): String = when (kind) {
+    "maintenance" -> "Wartung"
+    "inspection" -> "Inspektion"
+    "repair" -> "Reparatur"
+    "upgrade" -> "Nachrüstung"
+    else -> kind
+}
+
+val costCategories: List<Pair<String, String>> = listOf(
+    "fee" to "Gebühren", "parking" to "Parken", "toll" to "Maut", "care" to "Pflege", "tax" to "Steuer",
+    "insurance" to "Versicherung", "financing" to "Finanzierung", "other" to "Sonstiges",
+)
+
+fun costCategoryLabel(key: String): String = when (key) {
+    "energy" -> "Kraftstoff/Energie"
+    "maintenance" -> "Wartung"
+    "inspection" -> "Inspektion"
+    "repair" -> "Reparatur"
+    "upgrade" -> "Nachrüstung"
+    else -> costCategories.firstOrNull { it.first == key }?.second ?: key
+}
+
+val docTypes: List<Pair<String, String>> = listOf(
+    "invoice" to "Rechnung", "inspection_report" to "HU/TÜV-Bericht", "service_book" to "Checkheft", "workshop_report" to "Werkstattbericht",
+    "registration" to "Zulassung", "insurance" to "Versicherung", "maintenance_manual" to "Wartungshandbuch", "owner_manual" to "Bedienungsanleitung",
+    "technical_doc" to "Technische Dokumentation", "other" to "Sonstiges",
+)
+
+fun docTypeLabel(key: String): String = docTypes.firstOrNull { it.first == key }?.second ?: key

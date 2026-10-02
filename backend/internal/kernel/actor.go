@@ -13,31 +13,41 @@ type Actor struct {
 	SessionID uuid.UUID
 	Kind      string // user | api_token | assistant | import | system
 	RequestID string
-	// Nur bei API-Tokens: erlaubte Scopes und optional erlaubte Fahrzeuge (nil = alle).
+	// Nur bei API-Tokens: erlaubte Scopes und (optional) Fahrzeuge. nil = keine Einschränkung.
 	Scopes     []string
 	VehicleIDs []uuid.UUID
 }
 
-// VehicleAllowed meldet, ob ein API-Token auf das Fahrzeug beschränkt ist (ADR-016).
-func (a Actor) VehicleAllowed(id uuid.UUID) bool {
-	if a.VehicleIDs == nil {
+// Scopes für API-Tokens (Schema Scope).
+const (
+	ScopeVehiclesRead  = "vehicles:read"
+	ScopeEntriesWrite  = "entries:write"
+	ScopeEntriesDelete = "entries:delete"
+)
+
+// Restricted: Akteur unterliegt Token-Scopes.
+func (a Actor) Restricted() bool { return a.Kind == "api_token" }
+
+// HasScope prüft einen Scope; Sitzungen haben alle Scopes ihrer Rolle.
+func (a Actor) HasScope(s string) bool {
+	if !a.Restricted() {
 		return true
 	}
-	for _, v := range a.VehicleIDs {
-		if v == id {
+	for _, x := range a.Scopes {
+		if x == s {
 			return true
 		}
 	}
 	return false
 }
 
-// HasScope meldet, ob der Akteur einen Scope besitzt. Sitzungen haben alle Scopes.
-func (a Actor) HasScope(scope string) bool {
-	if a.Kind != "api_token" {
+// MayAccess prüft die Fahrzeugbeschränkung eines Tokens.
+func (a Actor) MayAccess(vehicleID uuid.UUID) bool {
+	if a.VehicleIDs == nil {
 		return true
 	}
-	for _, s := range a.Scopes {
-		if s == scope {
+	for _, id := range a.VehicleIDs {
+		if id == vehicleID {
 			return true
 		}
 	}
@@ -47,9 +57,7 @@ func (a Actor) HasScope(scope string) bool {
 type actorKey struct{}
 
 // WithActor legt den Akteur im Kontext ab.
-func WithActor(ctx context.Context, a Actor) context.Context {
-	return context.WithValue(ctx, actorKey{}, a)
-}
+func WithActor(ctx context.Context, a Actor) context.Context { return context.WithValue(ctx, actorKey{}, a) }
 
 // ActorFrom liest den Akteur aus dem Kontext.
 func ActorFrom(ctx context.Context) (Actor, bool) {

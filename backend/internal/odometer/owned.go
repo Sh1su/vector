@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -182,33 +181,4 @@ func Owned(valid []Reading, segs Segments, source string) map[uuid.UUID]OwnedRea
 		}
 	}
 	return out
-}
-
-// DailyRate liefert die durchschnittliche Tagesleistung (ODO-08) in kanonischer
-// Einheit pro Tag; ok = false, wenn unbekannt.
-func DailyRate(valid []Reading, segs Segments, now time.Time) (float64, bool) {
-	if len(valid) < 2 {
-		return 0, false
-	}
-	from := now.AddDate(0, 0, -90)
-	n := 0
-	for _, r := range valid {
-		if !r.At.Before(from) && !r.At.After(now) {
-			n++
-		}
-	}
-	days := 90.0
-	if n < 2 {
-		first := valid[0].At
-		days = now.Sub(first).Hours() / 24
-		if days < 14 {
-			return 0, false
-		}
-		from = first
-	}
-	d := DistanceBetween(valid, segs, from, now)
-	if !d.Known || d.Meters < 0 {
-		return 0, false
-	}
-	return float64(d.Meters) / days, true
 }

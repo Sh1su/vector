@@ -26,7 +26,7 @@ INSERT INTO identity.session (id, account_id, token_hash, csrf_token, client_kin
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: GetActiveSession :one
-SELECT s.id, s.account_id, s.csrf_token, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
+SELECT s.id, s.account_id, s.csrf_token, s.client_kind, s.idle_expires_at, s.absolute_expires_at, s.last_seen_at
 FROM identity.session s
 JOIN identity.account a ON a.id = s.account_id
 WHERE s.token_hash = $1 AND s.revoked_at IS NULL
@@ -62,15 +62,13 @@ UPDATE identity.account SET password_hash = $2, updated_at = now(), version = ve
 -- name: RevokeOtherSessions :exec
 UPDATE identity.session SET revoked_at = now() WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL;
 
--- name: GetInstallationSettings :one
-SELECT settings FROM identity.installation_settings WHERE id;
-
--- name: UpdateInstallationSettings :exec
-UPDATE identity.installation_settings SET settings = $1, updated_by = $2, updated_at = now(), version = version + 1 WHERE id;
+-- name: VehicleOwnerSettings :one
+SELECT a.settings FROM identity.vehicle_membership m JOIN identity.account a ON a.id = m.account_id
+WHERE m.vehicle_id = $1 AND m.role = 'owner' LIMIT 1;
 
 -- name: InsertApiToken :one
-INSERT INTO identity.api_token (id, account_id, name, token_hash, prefix, scopes, vehicle_ids, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
+INSERT INTO identity.api_token (id, account_id, name, token_hash, scopes, vehicle_ids, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
 
 -- name: ListApiTokens :many
 SELECT * FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC;
@@ -79,9 +77,9 @@ SELECT * FROM identity.api_token WHERE account_id = $1 AND revoked_at IS NULL OR
 UPDATE identity.api_token SET revoked_at = now() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL;
 
 -- name: GetActiveApiToken :one
-SELECT t.* FROM identity.api_token t
-JOIN identity.account a ON a.id = t.account_id
+SELECT t.*, a.is_admin FROM identity.api_token t JOIN identity.account a ON a.id = t.account_id
 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now() AND a.status = 'active';
 
 -- name: TouchApiToken :exec
 UPDATE identity.api_token SET last_used_at = now() WHERE id = $1;
+

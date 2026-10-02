@@ -36,7 +36,7 @@ import app.vectra.core.model.Vehicle
 
 /** Fahrzeugliste nach dem Entwurf „Fahrzeuge“. Antippen wählt das Fahrzeug für die App. */
 @Composable
-fun VehiclesScreen(state: VehiclesState, onBack: () -> Unit, onSelect: (Vehicle) -> Unit) {
+fun VehiclesScreen(state: VehiclesState, onBack: () -> Unit, onSelect: (Vehicle) -> Unit, onPhoto: (Vehicle) -> Unit = {}) {
     val c = V.colors
     Column(Modifier.fillMaxSize().background(c.bg)) {
         val n = state.vehicles.size
@@ -44,21 +44,32 @@ fun VehiclesScreen(state: VehiclesState, onBack: () -> Unit, onSelect: (Vehicle)
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             state.error?.let { item { Note(NoteKind.Bad, it) } }
             if (state.loading && n == 0) item { Loading() }
-            items(state.vehicles, key = { it.id }) { v -> VehicleCard(v, state.currentKm[v.id], v.id == state.selectedId) { onSelect(v) } }
+            items(state.vehicles, key = { it.id }) { v -> VehicleCard(v, state.currentKm[v.id], v.id == state.selectedId, state.photos[v.id], state.uploading, { onPhoto(v) }) { onSelect(v) } }
             item {
-                Note(NoteKind.Info, "Fahrzeuge lassen sich teilen. Jede Person bekommt pro Fahrzeug eine Rolle: Eigentümer, Bearbeiter oder Leser. Neue Fahrzeuge legst du in der Web-App an.")
+                Note(NoteKind.Info, "Fahrzeuge lassen sich teilen. Jede Person bekommt pro Fahrzeug eine Rolle: Eigentümer, Bearbeiter oder Leser. Neue Fahrzeuge legst du in der Web-App an; das Foto lässt sich hier ändern.")
             }
         }
     }
 }
 
 @Composable
-private fun VehicleCard(v: Vehicle, km: String?, selected: Boolean, onClick: () -> Unit) {
+private fun VehicleCard(v: Vehicle, km: String?, selected: Boolean, photo: androidx.compose.ui.graphics.ImageBitmap?, uploading: Boolean, onPhoto: () -> Unit, onClick: () -> Unit) {
     val c = V.colors
     val shape = RoundedCornerShape(16.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(c.card).border(if (selected) 2.dp else 1.dp, if (selected) c.link else c.border, shape).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().height(120.dp).background(if (c.dark) c.border else c.border), contentAlignment = Alignment.Center) {
-            Icon(VIcons.car, null, tint = c.muted, modifier = Modifier.size(48.dp))
+            if (photo != null) androidx.compose.foundation.Image(photo, "Foto von ${v.displayName}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            else Icon(VIcons.car, null, tint = c.muted, modifier = Modifier.size(48.dp))
+            if (v.canEdit) {
+                Row(
+                    Modifier.align(Alignment.BottomEnd).padding(10.dp).clip(RoundedCornerShape(10.dp)).background(app.vectra.android.ui.Brand.navy.copy(alpha = 0.8f))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onPhoto).padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(VIcons.camera, null, tint = app.vectra.android.ui.Brand.onNavy, modifier = Modifier.size(16.dp))
+                    Text(if (uploading) "Lädt …" else if (photo != null) "Foto ändern" else "Foto hinzufügen", style = VType.caption, color = app.vectra.android.ui.Brand.onNavy)
+                }
+            }
             Box(Modifier.align(Alignment.TopStart).padding(12.dp)) {
                 when {
                     v.status != "active" -> StatusChip(if (v.status == "sold") "Verkauft" else "Stillgelegt", ChipKind.Info)

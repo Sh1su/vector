@@ -1,7 +1,36 @@
 package app.vectra.core.net
 
 import app.vectra.core.model.Account
+import app.vectra.core.model.AssistantConsent
+import app.vectra.core.model.AssistantMessage
+import app.vectra.core.model.AssistantStatus
+import app.vectra.core.model.Conversation
+import app.vectra.core.model.Proposal
+import app.vectra.core.model.ProposalConfirm
+import app.vectra.core.model.StatusText
+import app.vectra.core.model.CompletionCreate
+import app.vectra.core.model.CostEntry
+import app.vectra.core.model.CostEntryCreate
+import app.vectra.core.model.CostOccurrenceList
+import app.vectra.core.model.CostReport
+import app.vectra.core.model.DocumentCreate
+import app.vectra.core.model.DocumentMeta
+import app.vectra.core.model.DueStatus
+import app.vectra.core.model.FileMeta
+import app.vectra.core.model.ServiceEntry
+import app.vectra.core.model.ServiceEntryCreate
+import app.vectra.core.model.Trip
+import app.vectra.core.model.TripCategory
+import app.vectra.core.model.TripFinish
+import app.vectra.core.model.TripReport
+import app.vectra.core.model.TripStart
+import app.vectra.core.model.VehicleImage
+import app.vectra.core.model.VehicleImageCreate
 import app.vectra.core.model.LoginRequest
+import app.vectra.core.model.MaintenanceBook
+import app.vectra.core.model.MaintenanceBookApply
+import app.vectra.core.model.MaintenanceBookApplyResult
+import app.vectra.core.model.MaintenanceBookPage
 import app.vectra.core.model.OdometerDistance
 import app.vectra.core.model.OdometerReading
 import app.vectra.core.model.OdometerReadingCreate
@@ -17,6 +46,8 @@ import kotlinx.serialization.serializer
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -88,8 +119,8 @@ class ApiClient(
 
     // --- Identity ---
 
-    suspend fun login(email: String, password: String): Account =
-        call("POST", "/auth/login", Account.serializer(), encode(LoginRequest(email, password)))
+    suspend fun login(email: String, password: String, clientKind: String = "android"): Account =
+        call("POST", "/auth/login", Account.serializer(), encode(LoginRequest(email, password, clientKind)))
 
     suspend fun logout() {
         runCatching { raw("POST", "/auth/logout") }
@@ -116,6 +147,168 @@ class ApiClient(
 
     suspend fun createReading(vehicleId: String, body: OdometerReadingCreate): OdometerReading =
         call("POST", "/vehicles/$vehicleId/odometer/readings", OdometerReading.serializer(), encode(body))
+
+    // --- Wartung ---
+
+    suspend fun dueStatus(vehicleId: String): List<DueStatus> =
+        call("GET", "/vehicles/$vehicleId/maintenance/status", Page.serializer(DueStatus.serializer())).items
+
+    suspend fun complete(vehicleId: String, itemId: String, body: CompletionCreate, idempotencyKey: String): Unit {
+        val r = raw("POST", "/vehicles/$vehicleId/maintenance-items/$itemId/completions", encode(body), mapOf("Idempotency-Key" to idempotencyKey))
+        if (!r.isSuccess) throw ApiException(r.status, r.problem())
+    }
+
+    suspend fun maintenanceBooks(): List<MaintenanceBook> =
+        call("GET", "/maintenance-books", MaintenanceBookPage.serializer()).items
+
+    suspend fun applyMaintenanceBook(vehicleId: String, bookId: String, body: MaintenanceBookApply): MaintenanceBookApplyResult =
+        call("POST", "/vehicles/$vehicleId/maintenance-books/$bookId/apply", MaintenanceBookApplyResult.serializer(), encode(body))
+
+    // --- Service ---
+
+    suspend fun serviceEntries(vehicleId: String, limit: Int = 50): List<ServiceEntry> =
+        call("GET", "/vehicles/$vehicleId/service-entries?limit=$limit", Page.serializer(ServiceEntry.serializer())).items
+
+    suspend fun createServiceEntry(vehicleId: String, body: ServiceEntryCreate): ServiceEntry =
+        call("POST", "/vehicles/$vehicleId/service-entries", ServiceEntry.serializer(), encode(body))
+
+    // --- Kosten ---
+
+    suspend fun costReport(vehicleId: String, from: String, to: String): CostReport =
+        call("GET", "/vehicles/$vehicleId/cost-report?from=$from&to=$to&group_by=category", CostReport.serializer())
+
+    suspend fun costOccurrences(vehicleId: String): CostOccurrenceList =
+        call("GET", "/vehicles/$vehicleId/cost-occurrences", CostOccurrenceList.serializer())
+
+    suspend fun confirmOccurrence(vehicleId: String, planId: String, dueOn: String): CostEntry =
+        call("POST", "/vehicles/$vehicleId/cost-plans/$planId/occurrences/$dueOn/confirm", CostEntry.serializer(), "{}")
+
+    suspend fun costEntries(vehicleId: String, limit: Int = 30): List<CostEntry> =
+        call("GET", "/vehicles/$vehicleId/cost-entries?limit=$limit", Page.serializer(CostEntry.serializer())).items
+
+    suspend fun createCostEntry(vehicleId: String, body: CostEntryCreate): CostEntry =
+        call("POST", "/vehicles/$vehicleId/cost-entries", CostEntry.serializer(), encode(body))
+
+    // --- Fahrten ---
+
+    suspend fun trips(vehicleId: String, limit: Int = 50): List<Trip> =
+        call("GET", "/vehicles/$vehicleId/trips?limit=$limit", Page.serializer(Trip.serializer())).items
+
+    suspend fun tripCategories(vehicleId: String): List<TripCategory> =
+        call("GET", "/vehicles/$vehicleId/trip-categories", Page.serializer(TripCategory.serializer())).items
+
+    suspend fun tripReport(vehicleId: String, from: String, to: String): TripReport =
+        call("GET", "/vehicles/$vehicleId/trip-report?from=$from&to=$to", TripReport.serializer())
+
+    suspend fun startTrip(vehicleId: String, body: TripStart): Trip =
+        call("POST", "/vehicles/$vehicleId/trips/start", Trip.serializer(), encode(body))
+
+    suspend fun finishTrip(vehicleId: String, trip: Trip, body: TripFinish): Trip =
+        call("POST", "/vehicles/$vehicleId/trips/${trip.id}/finish", Trip.serializer(), encode(body), mapOf("If-Match" to "\"${trip.version}\""))
+
+    // --- Dokumente, Dateien, Fahrzeugbilder ---
+
+    suspend fun documents(vehicleId: String): List<DocumentMeta> =
+        call("GET", "/vehicles/$vehicleId/documents?limit=200", Page.serializer(DocumentMeta.serializer())).items
+
+    suspend fun files(vehicleId: String): List<FileMeta> =
+        call("GET", "/vehicles/$vehicleId/files?limit=200", Page.serializer(FileMeta.serializer())).items
+
+    suspend fun createDocument(vehicleId: String, body: DocumentCreate): DocumentMeta =
+        call("POST", "/vehicles/$vehicleId/documents", DocumentMeta.serializer(), encode(body))
+
+    suspend fun vehicleImages(vehicleId: String): List<VehicleImage> =
+        call("GET", "/vehicles/$vehicleId/images", Page.serializer(VehicleImage.serializer())).items
+
+    suspend fun setVehicleImage(vehicleId: String, fileId: String): VehicleImage =
+        call("POST", "/vehicles/$vehicleId/images", VehicleImage.serializer(), encode(VehicleImageCreate(fileId, primary = true)))
+
+    /** Datei hochladen (multipart, Felder vor der Datei). Bei Dublette liefert der Server die vorhandene Datei (DO-02). */
+    suspend fun upload(vehicleId: String, name: String, mediaType: String?, bytes: ByteArray, captureSource: String = "gallery"): FileMeta =
+        withContext(Dispatchers.IO) {
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("capture_source", captureSource)
+                .addFormDataPart("file", name, bytes.toRequestBody(mediaType?.toMediaTypeOrNull()))
+                .build()
+            val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/vehicles/$vehicleId/files").toHttpUrl())
+                .header("Accept", "application/json, application/problem+json").post(body)
+            cookies.value(SessionCookieJar.CSRF_COOKIE)?.let { b.header("X-CSRF-Token", it) }
+            http.newCall(b.build()).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) throw ApiException(resp.code, runCatching { VectraJson.decodeFromString(Problem.serializer(), text) }.getOrNull())
+                VectraJson.decodeFromString(FileMeta.serializer(), text)
+            }
+        }
+
+    /** Vorschaubild (JPEG ohne EXIF) als Bytes; null, wenn es keines gibt. */
+    suspend fun preview(vehicleId: String, fileId: String, size: String = "thumbnail"): ByteArray? =
+        withContext(Dispatchers.IO) {
+            val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/vehicles/$vehicleId/files/$fileId/preview?size=$size").toHttpUrl())
+            http.newCall(b.build()).execute().use { resp -> if (resp.isSuccessful) resp.body?.bytes() else null }
+        }
+
+    // --- Assistent ---
+
+    suspend fun assistantStatus(): AssistantStatus = call("GET", "/assistant/status", AssistantStatus.serializer())
+
+    suspend fun giveConsent(providerName: String): AssistantStatus =
+        call("POST", "/assistant/consent", AssistantStatus.serializer(), encode(AssistantConsent(true, providerName)))
+
+    suspend fun conversations(): List<Conversation> =
+        call("GET", "/assistant/conversations", Page.serializer(Conversation.serializer())).items
+
+    suspend fun createConversation(vehicleId: String?): Conversation =
+        call("POST", "/assistant/conversations", Conversation.serializer(), encode(Conversation(vehicleId = vehicleId)))
+
+    suspend fun assistantMessages(conversationId: String): List<AssistantMessage> =
+        call("GET", "/assistant/conversations/$conversationId/messages", Page.serializer(AssistantMessage.serializer())).items
+
+    suspend fun confirmProposal(id: String, body: ProposalConfirm = ProposalConfirm()): Proposal =
+        call("POST", "/assistant/proposals/$id/confirm", Proposal.serializer(), encode(body))
+
+    suspend fun rejectProposal(id: String): Proposal = call("POST", "/assistant/proposals/$id/reject", Proposal.serializer(), "{}")
+
+    /**
+     * Nachricht senden. Die Antwort kommt als Server-Sent Events: status (Zwischenschritt), proposal
+     * (Vorschlag), message (fertige Antwort) oder error (Problem Details).
+     */
+    suspend fun sendAssistantMessage(conversationId: String, text: String, onStatus: (String) -> Unit, onProposal: (Proposal) -> Unit): AssistantMessage =
+        withContext(Dispatchers.IO) {
+            val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/assistant/conversations/$conversationId/messages").toHttpUrl())
+                .header("Accept", "text/event-stream").post(encode(AssistantMessage(text = text)).toRequestBody("application/json".toMediaType()))
+            cookies.value(SessionCookieJar.CSRF_COOKIE)?.let { b.header("X-CSRF-Token", it) }
+            val client = http.newBuilder().readTimeout(java.time.Duration.ofMinutes(5)).build()
+            client.newCall(b.build()).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    throw ApiException(resp.code, runCatching { VectraJson.decodeFromString(Problem.serializer(), body) }.getOrNull())
+                }
+                val source = resp.body!!.source()
+                var event = "message"
+                val data = StringBuilder()
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    when {
+                        line.startsWith("event: ") -> event = line.removePrefix("event: ")
+                        line.startsWith("data: ") -> data.append(line.removePrefix("data: "))
+                        line.isEmpty() && data.isNotEmpty() -> {
+                            val json = data.toString()
+                            data.clear()
+                            when (event) {
+                                "status" -> runCatching { onStatus(VectraJson.decodeFromString(StatusText.serializer(), json).text) }
+                                "proposal" -> runCatching { onProposal(VectraJson.decodeFromString(Proposal.serializer(), json)) }
+                                "error" -> {
+                                    val p = runCatching { VectraJson.decodeFromString(Problem.serializer(), json) }.getOrNull()
+                                    throw ApiException(p?.status ?: 500, p)
+                                }
+                                "message" -> return@withContext VectraJson.decodeFromString(AssistantMessage.serializer(), json)
+                            }
+                        }
+                    }
+                }
+                throw java.io.IOException("Die Antwort des Assistenten brach ab.")
+            }
+        }
 
     private fun q(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
 

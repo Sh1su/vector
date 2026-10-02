@@ -70,6 +70,8 @@ object VIcons {
     val mail: ImageVector by lazy { icon("mail", "M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2z" to false, "M3 7l9 6 9-6" to false) }
     val sun: ImageVector by lazy { icon("sun", "M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0z" to false, "M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" to false) }
     val play: ImageVector by lazy { icon("play", "M8 5v14l11-7z" to true) }
+    val mic: ImageVector by lazy { icon("mic", "M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1 -6 0v-5a3 3 0 0 1 3 -3z" to false, "M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" to false) }
+    val send: ImageVector by lazy { icon("send", "M4 12l16-8-6 16-3-7z" to false, "M11 13l9-9" to false) }
     val more: ImageVector by lazy { icon("more", "M3.4 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0z" to true, "M10.4 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0z" to true, "M17.4 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0z" to true) }
     val shield: ImageVector by lazy { icon("shield", "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" to false, "M9 12l2 2 4-4" to false) }
     val cloudoff: ImageVector by lazy { icon("cloudoff", "M3 3l18 18" to false, "M8 8a5 5 0 0 0-1 10h10M20 16a4 4 0 0 0-5-6 6 6 0 0 0-4-3" to false) }

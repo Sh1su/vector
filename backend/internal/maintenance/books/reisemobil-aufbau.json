@@ -1,0 +1,56 @@
+{
+  "id": "reisemobil-aufbau",
+  "make": "Reisemobil",
+  "model": "Aufbau (Ergänzung)",
+  "variant": "Wohnmobile und Campervans mit Flüssiggasanlage, ergänzend zum Plan des Basisfahrzeugs",
+  "title": "Reisemobil-Aufbau – Prüfungen und Pflege",
+  "source": "Prüffristen in Deutschland; die Herstellergarantie auf die Dichtigkeit setzt meist die jährliche Prüfung voraus. Bitte mit den Unterlagen des Aufbauherstellers abgleichen.",
+  "items": [
+    {
+      "key": "gas-g607",
+      "title": "Gasprüfung nach DVGW G 607",
+      "category": "legal_inspection",
+      "description": "Prüfbescheinigung und Plakette; Voraussetzung für die HU.",
+      "interval_months": 24
+    },
+    {
+      "key": "gas-hoses",
+      "title": "Gasschläuche und Druckregler ersetzen",
+      "category": "other",
+      "description": "Spätestens nach 10 Jahren bzw. laut Aufdruck.",
+      "interval_months": 120
+    },
+    {
+      "key": "leak-test",
+      "title": "Dichtigkeitsprüfung des Aufbaus",
+      "category": "other",
+      "description": "Feuchtigkeitsmessung durch Fachbetrieb.",
+      "interval_months": 12
+    },
+    {
+      "key": "water",
+      "title": "Frischwasseranlage reinigen und desinfizieren",
+      "category": "fluids",
+      "description": "Vor der Saison.",
+      "interval_months": 12
+    },
+    {
+      "key": "leisure-battery",
+      "title": "Aufbaubatterie und Ladegerät prüfen",
+      "category": "other",
+      "interval_months": 12
+    },
+    {
+      "key": "extinguisher",
+      "title": "Feuerlöscher prüfen",
+      "category": "other",
+      "interval_months": 24
+    },
+    {
+      "key": "smoke-co",
+      "title": "Rauch- und CO-Melder testen",
+      "category": "other",
+      "interval_months": 12
+    }
+  ]
+}

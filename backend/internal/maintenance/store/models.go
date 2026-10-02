@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AssistantConsent struct {
+	AccountID pgtype.UUID
+	Provider  string
+	GivenAt   pgtype.Timestamptz
+}
+
 type AssistantConversation struct {
 	ID        pgtype.UUID
 	AccountID pgtype.UUID
@@ -22,17 +28,17 @@ type AssistantMessage struct {
 	ConversationID pgtype.UUID
 	Role           string
 	Text           string
-	Citations      []byte
+	ProposalIds    []pgtype.UUID
 	CreatedAt      pgtype.Timestamptz
 }
 
 type AssistantProposal struct {
 	ID             pgtype.UUID
-	ConversationID pgtype.UUID
-	MessageID      pgtype.UUID
 	AccountID      pgtype.UUID
+	ConversationID pgtype.UUID
 	VehicleID      pgtype.UUID
 	Operation      string
+	Summary        string
 	Body           []byte
 	Anomalies      []byte
 	Status         string
@@ -45,20 +51,12 @@ type AssistantProposal struct {
 type AssistantRequestLog struct {
 	ID           pgtype.UUID
 	AccountID    pgtype.UUID
-	OccurredAt   pgtype.Timestamptz
 	Provider     string
 	Model        string
-	InputTokens  int64
-	OutputTokens int64
+	InputTokens  int32
+	OutputTokens int32
 	Tools        []string
-	Outcome      string
-}
-
-type AssistantUserState struct {
-	AccountID       pgtype.UUID
-	Enabled         bool
-	ConsentProvider pgtype.Text
-	ConsentAt       pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
 }
 
 type AuditEvent struct {
@@ -73,6 +71,147 @@ type AuditEvent struct {
 	Changes        []byte
 	Reason         pgtype.Text
 	RequestID      pgtype.Text
+}
+
+type CostsEntry struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	Category         string
+	Title            string
+	IncurredOn       pgtype.Date
+	TimeZone         string
+	CoversFrom       pgtype.Date
+	CoversTo         pgtype.Date
+	AmountMinor      int64
+	Currency         string
+	RecurringPlanID  pgtype.UUID
+	PlanOccurrenceOn pgtype.Date
+	Note             string
+	Tags             []string
+	Origin           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+	RecordedAt       pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	Version          int32
+}
+
+type CostsLedger struct {
+	ID           pgtype.UUID
+	VehicleID    pgtype.UUID
+	SourceModule string
+	SourceID     pgtype.UUID
+	Category     string
+	CostKind     pgtype.Text
+	BookedOn     pgtype.Date
+	AmountMinor  int64
+	Currency     string
+	CoversFrom   pgtype.Date
+	CoversTo     pgtype.Date
+}
+
+type CostsOccurrenceDismissal struct {
+	PlanID    pgtype.UUID
+	DueOn     pgtype.Date
+	Reason    string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+}
+
+type CostsPlan struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	Category         string
+	Title            string
+	AmountMinor      int64
+	Currency         string
+	IntervalMonths   pgtype.Int4
+	IntervalDays     pgtype.Int4
+	FirstDueOn       pgtype.Date
+	EndsOn           pgtype.Date
+	RemindDaysBefore int32
+	Active           bool
+	Note             string
+	Origin           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+	RecordedAt       pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	Version          int32
+}
+
+type DocumentsAttachment struct {
+	ID         pgtype.UUID
+	VehicleID  pgtype.UUID
+	FileID     pgtype.UUID
+	DocumentID pgtype.UUID
+	TargetType string
+	TargetID   pgtype.UUID
+	Role       string
+	Page       pgtype.Int4
+	CreatedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	DeletedAt  pgtype.Timestamptz
+}
+
+type DocumentsDocument struct {
+	ID           pgtype.UUID
+	VehicleID    pgtype.UUID
+	DocType      string
+	Nature       string
+	Title        string
+	DocumentDate pgtype.Date
+	Issuer       pgtype.Text
+	Language     pgtype.Text
+	Note         string
+	Tags         []string
+	Origin       string
+	CreatedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedAt    pgtype.Timestamptz
+	UpdatedBy    pgtype.UUID
+	RecordedAt   pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
+	Version      int32
+}
+
+type DocumentsDocumentFile struct {
+	DocumentID pgtype.UUID
+	Position   int32
+	FileID     pgtype.UUID
+}
+
+type DocumentsFile struct {
+	ID               pgtype.UUID
+	VehicleID        pgtype.UUID
+	StorageKey       string
+	OriginalName     string
+	MediaType        string
+	SizeBytes        int64
+	Sha256           string
+	ReceivedAt       pgtype.Timestamptz
+	CapturedAtClient pgtype.Timestamptz
+	CaptureSource    pgtype.Text
+	Derivatives      []string
+	HasLocation      bool
+	SupersedesID     pgtype.UUID
+	ReplaceReason    pgtype.Text
+	UploadTimeOrigin string
+	CreatedBy        pgtype.UUID
+	DeletedAt        pgtype.Timestamptz
+}
+
+type DocumentsVehicleImage struct {
+	ID        pgtype.UUID
+	VehicleID pgtype.UUID
+	FileID    pgtype.UUID
+	IsPrimary bool
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
 }
 
 type FuelFill struct {
@@ -130,21 +269,12 @@ type IdentityApiToken struct {
 	AccountID  pgtype.UUID
 	Name       string
 	TokenHash  []byte
-	Prefix     string
 	Scopes     []string
 	VehicleIds []pgtype.UUID
 	ExpiresAt  pgtype.Timestamptz
 	CreatedAt  pgtype.Timestamptz
 	LastUsedAt pgtype.Timestamptz
 	RevokedAt  pgtype.Timestamptz
-}
-
-type IdentityInstallationSetting struct {
-	ID        bool
-	Settings  []byte
-	UpdatedAt pgtype.Timestamptz
-	UpdatedBy pgtype.UUID
-	Version   int32
 }
 
 type IdentitySession struct {
@@ -172,16 +302,14 @@ type MaintenanceCompletion struct {
 	ID             pgtype.UUID
 	ItemID         pgtype.UUID
 	VehicleID      pgtype.UUID
+	ServiceEntryID pgtype.UUID
 	Kind           string
 	CompletedOn    pgtype.Date
 	CompletedTotal pgtype.Int8
-	CompletedInput []byte
-	ServiceEntryID pgtype.UUID
 	Reason         pgtype.Text
 	IdempotencyKey pgtype.Text
 	CreatedAt      pgtype.Timestamptz
 	CreatedBy      pgtype.UUID
-	DeletedAt      pgtype.Timestamptz
 }
 
 type MaintenanceItem struct {
@@ -205,7 +333,7 @@ type MaintenanceItem struct {
 	DueDays                 pgtype.Int4
 	UpcomingDistance        pgtype.Int8
 	DueDistance             pgtype.Int8
-	Inputs                  []byte
+	DistanceUnit            string
 	Active                  bool
 	Note                    string
 	Origin                  string
@@ -290,6 +418,94 @@ type OilEntry struct {
 	RecordedAt         pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
 	Version            int32
+}
+
+type ServiceCostItem struct {
+	ID          pgtype.UUID
+	EntryID     pgtype.UUID
+	Position    int32
+	Kind        string
+	Label       pgtype.Text
+	AmountMinor int64
+}
+
+type ServiceEntry struct {
+	ID                pgtype.UUID
+	VehicleID         pgtype.UUID
+	Kind              string
+	Category          pgtype.Text
+	Title             string
+	Description       pgtype.Text
+	OccurredAt        pgtype.Timestamptz
+	TimeZone          string
+	TimePrecision     string
+	OdometerReadingID pgtype.UUID
+	Currency          string
+	ProviderName      pgtype.Text
+	InvoiceNumber     pgtype.Text
+	CostUnknown       bool
+	Note              string
+	Tags              []string
+	Origin            string
+	CreatedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	UpdatedAt         pgtype.Timestamptz
+	UpdatedBy         pgtype.UUID
+	RecordedAt        pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	Version           int32
+}
+
+type ServicePartLine struct {
+	ID             pgtype.UUID
+	EntryID        pgtype.UUID
+	Position       int32
+	Name           string
+	PartNumber     pgtype.Text
+	Quantity       pgtype.Numeric
+	QuantityUnit   pgtype.Text
+	UnitPriceMinor pgtype.Int8
+	CostItemID     pgtype.UUID
+}
+
+type TripsCategory struct {
+	ID              pgtype.UUID
+	VehicleID       pgtype.UUID
+	Name            string
+	Kind            string
+	PurposeRequired bool
+	Active          bool
+	DefaultKey      pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	Version         int32
+}
+
+type TripsTrip struct {
+	ID              pgtype.UUID
+	RootID          pgtype.UUID
+	VehicleID       pgtype.UUID
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	TimeZone        string
+	StartReadingID  pgtype.UUID
+	EndReadingID    pgtype.UUID
+	StartLocation   pgtype.Text
+	EndLocation     pgtype.Text
+	Purpose         pgtype.Text
+	CategoryID      pgtype.UUID
+	DriverAccountID pgtype.UUID
+	Note            string
+	Status          string
+	SupersedesID    pgtype.UUID
+	ChangeReason    pgtype.Text
+	Origin          string
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       pgtype.UUID
+	UpdatedAt       pgtype.Timestamptz
+	UpdatedBy       pgtype.UUID
+	RecordedAt      pgtype.Timestamptz
+	Version         int32
 }
 
 type VehiclesVehicle struct {

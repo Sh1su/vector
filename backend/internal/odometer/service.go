@@ -342,6 +342,9 @@ func (s *Service) Correct(ctx context.Context, actor kernel.Actor, vehicleID, re
 		if old.Status == StatusSuperseded {
 			return problem.Conflict("Dieser Messpunkt wurde bereits ersetzt.")
 		}
+		if old.Source != "manual" {
+			return problem.Conflict("Dieser Messpunkt gehört zu einem anderen Eintrag (" + old.Source + ") und wird dort geändert (I-ODO-3).")
+		}
 		if !hasValue {
 			iv, _ := old.InputValue.Float64Value()
 			in.Value, in.Unit = iv.Float64, old.InputUnit

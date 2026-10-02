@@ -3,26 +3,35 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/sh1su/vector/backend/internal/api"
 	"github.com/sh1su/vector/backend/internal/assistant"
+	"github.com/sh1su/vector/backend/internal/costs"
+	"github.com/sh1su/vector/backend/internal/documents"
 	"github.com/sh1su/vector/backend/internal/fuel"
 	"github.com/sh1su/vector/backend/internal/identity"
 	"github.com/sh1su/vector/backend/internal/kernel"
 	"github.com/sh1su/vector/backend/internal/maintenance"
+	mstore "github.com/sh1su/vector/backend/internal/maintenance/store"
 	"github.com/sh1su/vector/backend/internal/odometer"
 	"github.com/sh1su/vector/backend/internal/oil"
 	"github.com/sh1su/vector/backend/internal/platform/problem"
+	"github.com/sh1su/vector/backend/internal/servicehistory"
+	"github.com/sh1su/vector/backend/internal/trips"
 	"github.com/sh1su/vector/backend/internal/vehicles"
 )
 
@@ -31,16 +40,18 @@ type Deps struct {
 	Identity     *identity.Service
 	Vehicles     *vehicles.Service
 	Odometer     *odometer.Service
+	Costs        *costs.Service
+	Maintenance  *maintenance.Service
+	Service      *servicehistory.Service
+	Trips        *trips.Service
+	Documents    *documents.Service
+	Assistant    *assistant.Service
 	Fuel         *fuel.Service
 	Oil          *oil.Service
-	Maintenance  *maintenance.Service
-	Assistant    *assistant.Service
 	Log          *slog.Logger
 	CookieSecure bool
-	// OdometerVMaxKmh wird in den Installationseinstellungen angezeigt.
-	OdometerVMaxKmh int
-	WebDir          string
-	Ping            func(r *http.Request) error
+	WebDir       string
+	Ping         func(r *http.Request) error
 }
 
 // Server implementiert api.StrictServerInterface. Nicht umgesetzte Operationen
@@ -55,6 +66,22 @@ var _ api.StrictServerInterface = (*Server)(nil)
 // Handler baut den vollständigen HTTP-Handler.
 func Handler(d Deps) http.Handler {
 	s := &Server{d: d}
+	if d.Trips != nil {
+		d.Trips.Unit = func(ctx context.Context, a kernel.Actor, meter string) string { return s.displayUnit(ctx, a, meter) }
+	}
+	if d.Maintenance != nil && d.Identity != nil {
+		d.Maintenance.OwnerSettings = func(ctx context.Context, db mstore.DBTX, vehicleID uuid.UUID) map[string]any {
+			return d.Identity.OwnerSettings(ctx, db, vehicleID)
+		}
+	}
+	paramError := func(w http.ResponseWriter, r *http.Request, err error) {
+		var rh *api.RequiredHeaderError
+		if errors.As(err, &rh) && rh.ParamName == "If-Match" {
+			problem.Write(w, problem.PreconditionRequired(), requestID(r))
+			return
+		}
+		problem.Write(w, problem.Validation(problem.FieldError{Pointer: "", Code: "parameter", Message: err.Error()}), requestID(r))
+	}
 	strict := api.NewStrictHandlerWithOptions(s, []api.StrictMiddlewareFunc{scopeGuard}, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			problem.Write(w, problem.BadRequest("Der Request-Body ist ungültig."), requestID(r))
@@ -74,17 +101,17 @@ func Handler(d Deps) http.Handler {
 	r.Use(withRequestID, func(h http.Handler) http.Handler { return withLogging(d.Log, h) }, withSecurityHeaders)
 	apiRouter := chi.NewRouter()
 	apiRouter.Use(withBodyLimit, withClientInfo, func(h http.Handler) http.Handler { return withAuth(d.Identity, h) })
-	api.HandlerWithOptions(strict, api.ChiServerOptions{
-		BaseRouter: apiRouter,
-		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			var rh *api.RequiredHeaderError
-			if errors.As(err, &rh) && rh.ParamName == "If-Match" {
-				problem.Write(w, problem.PreconditionRequired(), requestID(r))
-				return
-			}
-			problem.Write(w, problem.Validation(problem.FieldError{Pointer: "", Code: "parameter", Message: err.Error()}), requestID(r))
-		},
-	})
+	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: apiRouter, ErrorHandlerFunc: paramError})
+
+	// Interner Aufrufweg für Assistent und MCP: dieselbe API, Akteur aus dem Kontext statt Cookie.
+	inner := chi.NewRouter()
+	inner.Use(withBodyLimit)
+	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: inner, ErrorHandlerFunc: paramError})
+	caller := internalCaller(inner)
+	if d.Assistant != nil {
+		d.Assistant.Caller = caller
+	}
+	apiRouter.Handle(mcpPath, assistant.MCP(caller, "1.0"))
 	apiRouter.NotFound(func(w http.ResponseWriter, r *http.Request) { problem.Write(w, problem.NotFound(), requestID(r)) })
 	r.Mount(apiPrefix, apiRouter)
 	r.Get(apiPrefix+"/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
@@ -132,14 +159,45 @@ func convert(src, dst any) error {
 	return json.Unmarshal(b, dst)
 }
 
-// scopeGuard setzt bei API-Tokens die Angaben der Spezifikation durch
-// (ADR-016): Die Operation muss Bearer-Tokens zulassen und das Token den
-// verlangten Scope besitzen. Wirksam ist die Schnittmenge mit den Rollen.
+// internalCaller ruft die API ohne Netz auf; Rechte, Validierung und Audit gelten unverändert.
+func internalCaller(h http.Handler) assistant.Caller {
+	return func(ctx context.Context, method, path string, body any, headers map[string]string) (int, []byte) {
+		var rd io.Reader
+		if body != nil {
+			b, err := json.Marshal(body)
+			if err != nil {
+				return 400, nil
+			}
+			rd = bytes.NewReader(b)
+		}
+		// Den Routing-Kontext der äußeren Anfrage entfernen, sonst routet chi nach deren Pfad.
+		ctx = context.WithValue(ctx, chi.RouteCtxKey, nil)
+		req, err := http.NewRequestWithContext(ctx, method, path, rd)
+		if err != nil {
+			return 400, nil
+		}
+		req.Header.Set("Accept", "application/json")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.Bytes()
+	}
+}
+
+// scopeGuard setzt bei API-Tokens die Angaben der Spezifikation je Operation
+// durch (ADR-016, deny-by-default): Die Operation muss Bearer-Tokens zulassen
+// und das Token den verlangten Scope besitzen. Wirksam ist die Schnittmenge mit
+// den Rollen am Fahrzeug (identity.Authorize).
 func scopeGuard(f api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
 	key := strings.ToLower(operationID[:1]) + operationID[1:]
 	sec, known := api.Security[key]
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
-		if a, ok := kernel.ActorFrom(ctx); ok && a.Kind == "api_token" {
+		if a, ok := kernel.ActorFrom(ctx); ok && a.Restricted() {
 			if !known || !sec.Bearer {
 				return nil, problem.Forbidden("Diese Operation ist mit API-Tokens nicht erlaubt.")
 			}

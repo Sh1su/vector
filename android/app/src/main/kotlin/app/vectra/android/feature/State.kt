@@ -1,6 +1,17 @@
 package app.vectra.android.feature
 
+import androidx.compose.ui.graphics.ImageBitmap
 import app.vectra.core.model.Anomaly
+import app.vectra.core.model.CostEntry
+import app.vectra.core.model.CostOccurrence
+import app.vectra.core.model.CostReport
+import app.vectra.core.model.DocumentMeta
+import app.vectra.core.model.DueStatus
+import app.vectra.core.model.FileMeta
+import app.vectra.core.model.ServiceEntry
+import app.vectra.core.model.Trip
+import app.vectra.core.model.TripCategory
+import app.vectra.core.model.TripReport
 import app.vectra.core.model.OdometerReading
 import app.vectra.core.model.OdometerValue
 import app.vectra.core.model.Vehicle
@@ -30,6 +41,9 @@ data class HomeState(
     val freshness: Freshness = Freshness(),
     val loading: Boolean = true,
     val error: String? = null,
+    val photo: ImageBitmap? = null,
+    val nextDue: DueStatus? = null,
+    val yearCosts: String? = null,
 ) {
     val attention: List<OutboxEntry> get() = pending.filter { it.status != app.vectra.core.outbox.OutboxStatus.PENDING && it.status != app.vectra.core.outbox.OutboxStatus.SENDING }
 }
@@ -51,6 +65,8 @@ data class VehiclesState(
     val selectedId: String? = null,
     val loading: Boolean = true,
     val error: String? = null,
+    val photos: Map<String, ImageBitmap> = emptyMap(),
+    val uploading: Boolean = false,
 )
 
 enum class ThemeMode(val label: String) { System("System"), Light("Hell"), Dark("Dunkel") }
@@ -63,7 +79,79 @@ data class SettingsState(
     val pendingCount: Int = 0,
     val clockSkewMinutes: Long = 0,
     val version: String = "",
+    val online: Boolean = true,
 )
 
 /** Befunde eines Outbox-Eintrags für den Bestätigungsdialog (ADR-010, ADR-021). */
 data class ConfirmRequest(val entry: OutboxEntry, val anomalies: List<Anomaly>)
+
+/** Fehler eines Formulars; bestätigbare Befunde (ADR-010) erlauben „Trotzdem speichern“ mit Begründung. */
+data class FormError(val message: String, val anomalies: List<Anomaly> = emptyList()) {
+    val confirmable: Boolean get() = anomalies.isNotEmpty() && anomalies.all { it.confirmable }
+}
+
+/** Bestätigung von Befunden beim erneuten Speichern. */
+data class Confirmation(val codes: List<String>, val reason: String)
+
+data class MaintenanceState(
+    val vehicle: Vehicle? = null,
+    val due: List<DueStatus> = emptyList(),
+    val services: List<ServiceEntry> = emptyList(),
+    val freshness: Freshness = Freshness(),
+    val loading: Boolean = true,
+    val error: String? = null,
+    val books: List<app.vectra.core.model.MaintenanceBook> = emptyList(),
+)
+
+data class CostsState(
+    val vehicle: Vehicle? = null,
+    val year: Int = 0,
+    val report: CostReport? = null,
+    val occurrences: List<CostOccurrence> = emptyList(),
+    val moreOpen: Int = 0,
+    val entries: List<CostEntry> = emptyList(),
+    val freshness: Freshness = Freshness(),
+    val loading: Boolean = true,
+    val error: String? = null,
+)
+
+data class TripsState(
+    val vehicle: Vehicle? = null,
+    val trips: List<Trip> = emptyList(),
+    val categories: List<TripCategory> = emptyList(),
+    val report: TripReport? = null,
+    val monthLabel: String = "",
+    val freshness: Freshness = Freshness(),
+    val loading: Boolean = true,
+    val error: String? = null,
+) {
+    val open: Trip? get() = trips.firstOrNull { it.status == "open" }
+}
+
+data class DocumentsState(
+    val vehicle: Vehicle? = null,
+    val documents: List<DocumentMeta> = emptyList(),
+    val files: List<FileMeta> = emptyList(),
+    val thumbs: Map<String, ImageBitmap> = emptyMap(),
+    val uploading: Boolean = false,
+    val message: String? = null,
+    val freshness: Freshness = Freshness(),
+    val loading: Boolean = true,
+    val error: String? = null,
+)
+
+/** Chat mit dem Assistenten (ADR-026: Einträge nur als Vorschlag, Bestätigung durch den Nutzer). */
+data class AssistantState(
+    val status: app.vectra.core.model.AssistantStatus? = null,
+    val conversationId: String? = null,
+    val messages: List<app.vectra.core.model.AssistantMessage> = emptyList(),
+    val pendingText: String? = null,
+    val progress: String? = null,
+    val pendingProposals: List<app.vectra.core.model.Proposal> = emptyList(),
+    val input: String = "",
+    val loading: Boolean = true,
+    val error: String? = null,
+    /** Befunde je Vorschlag, die vor dem Speichern eine Begründung brauchen. */
+    val anomalies: Map<String, List<app.vectra.core.model.Anomaly>> = emptyMap(),
+    val busyProposal: String? = null,
+)

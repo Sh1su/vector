@@ -1,14 +1,23 @@
 package app.vectra.android
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -16,13 +25,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.vectra.android.ui.Note
+import app.vectra.android.ui.NoteKind
+import app.vectra.android.ui.VIcons
+import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.vectra.android.feature.AddCostDialog
+import app.vectra.android.feature.AddDocumentDialog
 import app.vectra.android.feature.AddReadingDialog
-import app.vectra.android.feature.ComingSoonScreen
+import app.vectra.android.feature.AddServiceDialog
+import app.vectra.android.feature.ApplyBookDialog
+import app.vectra.android.feature.AssistantScreen
+import app.vectra.android.feature.CompleteDialog
 import app.vectra.android.feature.ConfirmDialog
+import app.vectra.android.feature.CostsScreen
+import app.vectra.android.feature.DocumentsScreen
+import app.vectra.android.feature.FinishTripDialog
+import app.vectra.android.feature.MaintenanceScreen
+import app.vectra.android.feature.ServiceScreen
+import app.vectra.android.feature.StartTripDialog
+import app.vectra.android.feature.TripsScreen
 import app.vectra.android.feature.HomeScreen
 import app.vectra.android.feature.LoginScreen
 import app.vectra.android.feature.MoreScreen
@@ -56,12 +83,44 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Liest eine vom System gewählte Datei (Name, Typ, Inhalt); große Dateien prüft der Server. */
+private fun readPicked(context: Context, uri: Uri): PickedFile? = runCatching {
+    val cr = context.contentResolver
+    val name = cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0) else null
+    } ?: "datei"
+    val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: return null
+    PickedFile(name, cr.getType(uri), bytes)
+}.getOrNull()
+
 @Composable
 private fun AppRoot(vm: MainViewModel) {
     val stack by vm.stack.collectAsStateWithLifecycle()
     val pending by vm.pending.collectAsStateWithLifecycle()
     val dialog by vm.dialog.collectAsStateWithLifecycle()
+    val formError by vm.formError.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
     val route = stack.last()
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { readPicked(context, it) }?.let(vm::onPicked)
+    }
+    fun pickDocument() { vm.pickPurpose = PickPurpose.Document; picker.launch("*/*") }
+    // Spracherkennung des Systems (offline je nach Gerät); das Ergebnis landet im Eingabefeld des Assistenten.
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::onDictated)
+    }
+    fun dictate() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Was möchtest du eintragen?")
+        try {
+            speech.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            vm.assistantError("Auf diesem Gerät ist keine Spracherkennung verfügbar. Diktier-Apps wie Wispr Flow funktionieren über die Tastatur.")
+        }
+    }
 
     BackHandler(enabled = vm.canGoBack) { vm.back() }
 
@@ -95,15 +154,32 @@ private fun AppRoot(vm: MainViewModel) {
                             onAddReading = { vm.dialog.value = DialogState.AddReading },
                             onOpenPending = { vm.open(Route.Odometer) },
                             onRefresh = vm::syncNow,
+                            onMaintenance = { vm.selectTab(Tab.Maintenance) },
+                            onCosts = { vm.selectTab(Tab.Costs) },
+                            onTrips = { vm.selectTab(Tab.Trips) },
+                            onDocuments = { vm.open(Route.Documents) },
+                            onAssistant = vm::openAssistant,
                         )
                     }
-                    Tab.Trips -> ComingSoonScreen("Fahrten", "Das Fahrtenbuch mit Start, Ziel und Zweck folgt in Iteration 3. Kilometerstände erfasst du bereits unter Übersicht.")
-                    Tab.Maintenance -> ComingSoonScreen("Wartung", "Wartungspläne, Fälligkeiten und die Servicehistorie folgen in Iteration 2.")
-                    Tab.Costs -> ComingSoonScreen("Kosten", "Kostenübersicht und wiederkehrende Kosten folgen in Iteration 2.")
+                    Tab.Trips -> {
+                        val s by vm.trips.collectAsStateWithLifecycle()
+                        TripsScreen(s, onStart = { vm.openDialog(DialogState.StartTrip) }, onFinish = { vm.openDialog(DialogState.FinishTrip(it)) }, onRefresh = vm::syncNow)
+                    }
+                    Tab.Maintenance -> {
+                        val s by vm.maintenance.collectAsStateWithLifecycle()
+                        MaintenanceScreen(s, onComplete = { vm.openDialog(DialogState.Complete(it)) }, onService = { vm.open(Route.Service) }, onRefresh = vm::syncNow, onBook = vm::openBooks)
+                    }
+                    Tab.Costs -> {
+                        val s by vm.costs.collectAsStateWithLifecycle()
+                        CostsScreen(s, onConfirm = vm::confirmOccurrence, onAdd = { vm.openDialog(DialogState.AddCost) }, onRefresh = vm::syncNow)
+                    }
                     Tab.More -> MoreScreen { t ->
                         when (t) {
                             MoreTarget.Vehicles -> vm.open(Route.Vehicles)
                             MoreTarget.Odometer -> vm.open(Route.Odometer)
+                            MoreTarget.Service -> vm.open(Route.Service)
+                            MoreTarget.Documents -> vm.open(Route.Documents)
+                            MoreTarget.Assistant -> vm.openAssistant()
                             MoreTarget.Settings -> vm.open(Route.Settings)
                         }
                     }
@@ -119,12 +195,31 @@ private fun AppRoot(vm: MainViewModel) {
                 }
                 Route.Vehicles -> {
                     val s by vm.vehicles.collectAsStateWithLifecycle()
-                    VehiclesScreen(s, onBack = vm::back, onSelect = vm::selectVehicle)
+                    VehiclesScreen(s, onBack = vm::back, onSelect = vm::selectVehicle, onPhoto = { v ->
+                        vm.pickPurpose = PickPurpose.VehiclePhoto(v.id)
+                        picker.launch("image/*")
+                    })
+                }
+                Route.Service -> {
+                    val s by vm.maintenance.collectAsStateWithLifecycle()
+                    ServiceScreen(s, onBack = vm::back, onAdd = { vm.openDialog(DialogState.AddService) })
+                }
+                Route.Assistant -> {
+                    val s by vm.assistant.collectAsStateWithLifecycle()
+                    AssistantScreen(
+                        s, onBack = vm::back, onInput = vm::assistantInput, onSend = vm::assistantSend, onMic = { dictate() },
+                        onConsent = vm::assistantConsent, onNew = vm::assistantNew, onConfirm = vm::confirmProposal, onReject = vm::rejectProposal,
+                    )
+                }
+                Route.Documents -> {
+                    val s by vm.documents.collectAsStateWithLifecycle()
+                    DocumentsScreen(s, onBack = vm::back, onUpload = { pickDocument() })
                 }
                 Route.Settings -> {
                     val themeMode by vm.theme.collectAsStateWithLifecycle()
+                    val online by vm.online.collectAsStateWithLifecycle()
                     SettingsScreen(
-                        vm.settingsState(pending.size).copy(theme = themeMode),
+                        vm.settingsState(pending.size).copy(theme = themeMode, online = online),
                         onBack = vm::back,
                         onTheme = vm::setTheme,
                         onSync = vm::syncNow,
@@ -133,8 +228,13 @@ private fun AppRoot(vm: MainViewModel) {
                 }
                 Route.Login -> Unit
             }
+            val notice by vm.notice.collectAsStateWithLifecycle()
+            notice?.let { msg ->
+                LaunchedEffect(msg) { delay(4000); vm.dismissNotice() }
+                Note(NoteKind.Info, msg, Modifier.align(Alignment.BottomCenter).padding(16.dp), icon = VIcons.sync)
+            }
         }
-        TabBar(activeTab, vm::selectTab)
+        if (route != Route.Assistant) TabBar(activeTab, vm::selectTab)
     }
 
     when (val d = dialog) {
@@ -160,8 +260,28 @@ private fun AppRoot(vm: MainViewModel) {
                 onConfirm = { codes, reason -> vm.confirm(entry, codes, reason) },
                 onDiscard = { vm.discard(entry) },
                 onRetry = { vm.retry(entry) },
+                onCorrect = { value -> vm.correct(entry, value) },
             )
         }
+        is DialogState.Complete -> CompleteDialog(d.item, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = { km -> vm.complete(d.item, km) })
+        DialogState.AddService -> {
+            val m by vm.maintenance.collectAsStateWithLifecycle()
+            AddServiceDialog(m.vehicle?.defaultCurrency ?: "EUR", vm.lastKm(), m.due, formError, busy, onDismiss = vm::closeDialog, onSave = vm::addService)
+        }
+        DialogState.ApplyBook -> {
+            val m by vm.maintenance.collectAsStateWithLifecycle()
+            ApplyBookDialog(m.books, m.vehicle, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = vm::applyBook)
+        }
+        DialogState.AddCost -> {
+            val cs by vm.costs.collectAsStateWithLifecycle()
+            AddCostDialog(cs.vehicle?.defaultCurrency ?: "EUR", formError, busy, onDismiss = vm::closeDialog, onSave = vm::addCost)
+        }
+        DialogState.StartTrip -> {
+            val t by vm.trips.collectAsStateWithLifecycle()
+            StartTripDialog(t.categories, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = vm::startTrip)
+        }
+        is DialogState.FinishTrip -> FinishTripDialog(d.trip, formError, busy, onDismiss = vm::closeDialog, onSave = { km, to, c -> vm.finishTrip(d.trip, km, to, c) })
+        is DialogState.AddDocument -> AddDocumentDialog(d.file.name, formError, busy, onDismiss = vm::closeDialog, onSave = { title, type -> vm.createDocument(d.file, title, type) })
         DialogState.Logout -> ConfirmDialog(
             "Abmelden?",
             "${pending.count { it.status != OutboxStatus.FAILED }} Einträge sind noch nicht übertragen. Beim Abmelden werden sie und alle Daten auf diesem Gerät gelöscht.",

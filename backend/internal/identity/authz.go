@@ -37,11 +37,17 @@ func RoleOf(ctx context.Context, db store.DBTX, vehicleID, accountID uuid.UUID) 
 // vehicleID muss aus dem geladenen Objekt stammen, nie aus dem Request.
 // Ohne Mitgliedschaft: 404 (kein Informationsleck, ADR-013); zu geringe Rolle: 403.
 func Authorize(ctx context.Context, db store.DBTX, actor kernel.Actor, vehicleID uuid.UUID, need string) (string, error) {
+	if !actor.MayAccess(vehicleID) {
+		return "", problem.NotFound()
+	}
+	if need != RoleViewer && !actor.HasScope(kernel.ScopeEntriesWrite) {
+		return "", problem.Forbidden("Das Token darf nur lesen (Scope entries:write fehlt).")
+	}
 	role, err := RoleOf(ctx, db, vehicleID, actor.AccountID)
 	if err != nil {
 		return "", err
 	}
-	if role == "" || !actor.VehicleAllowed(vehicleID) {
+	if role == "" {
 		return "", problem.NotFound()
 	}
 	if roleRank[role] < roleRank[need] {
@@ -68,17 +74,11 @@ func MemberVehicles(ctx context.Context, db store.DBTX, accountID uuid.UUID) (ma
 	return out, nil
 }
 
-// ActorVehicles liefert die Fahrzeuge mit Rolle, die der Akteur sehen darf
-// (bei API-Tokens ggf. auf einzelne Fahrzeuge beschränkt).
-func ActorVehicles(ctx context.Context, db store.DBTX, actor kernel.Actor) (map[uuid.UUID]string, error) {
-	m, err := MemberVehicles(ctx, db, actor.AccountID)
+// DisplayName liefert den Anzeigenamen eines Kontos oder "" (für Auswertungen).
+func DisplayName(ctx context.Context, db store.DBTX, accountID uuid.UUID) string {
+	a, err := store.New(db).GetAccountByID(ctx, pgUUID(accountID))
 	if err != nil {
-		return nil, err
+		return ""
 	}
-	for id := range m {
-		if !actor.VehicleAllowed(id) {
-			delete(m, id)
-		}
-	}
-	return m, nil
+	return a.DisplayName
 }

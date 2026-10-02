@@ -1115,6 +1115,57 @@ func (e InvitationStatus) Valid() bool {
 	}
 }
 
+// Defines values for LoginRequestClientKind.
+const (
+	LoginRequestClientKindAndroid LoginRequestClientKind = "android"
+	LoginRequestClientKindWeb     LoginRequestClientKind = "web"
+)
+
+// Valid indicates whether the value is a known member of the LoginRequestClientKind enum.
+func (e LoginRequestClientKind) Valid() bool {
+	switch e {
+	case LoginRequestClientKindAndroid:
+		return true
+	case LoginRequestClientKindWeb:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaintenanceBookItemCategory.
+const (
+	MaintenanceBookItemCategoryBrakes          MaintenanceBookItemCategory = "brakes"
+	MaintenanceBookItemCategoryFilters         MaintenanceBookItemCategory = "filters"
+	MaintenanceBookItemCategoryFluids          MaintenanceBookItemCategory = "fluids"
+	MaintenanceBookItemCategoryLegalInspection MaintenanceBookItemCategory = "legal_inspection"
+	MaintenanceBookItemCategoryOther           MaintenanceBookItemCategory = "other"
+	MaintenanceBookItemCategoryService         MaintenanceBookItemCategory = "service"
+	MaintenanceBookItemCategoryTires           MaintenanceBookItemCategory = "tires"
+)
+
+// Valid indicates whether the value is a known member of the MaintenanceBookItemCategory enum.
+func (e MaintenanceBookItemCategory) Valid() bool {
+	switch e {
+	case MaintenanceBookItemCategoryBrakes:
+		return true
+	case MaintenanceBookItemCategoryFilters:
+		return true
+	case MaintenanceBookItemCategoryFluids:
+		return true
+	case MaintenanceBookItemCategoryLegalInspection:
+		return true
+	case MaintenanceBookItemCategoryOther:
+		return true
+	case MaintenanceBookItemCategoryService:
+		return true
+	case MaintenanceBookItemCategoryTires:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MaintenanceCompletionKind.
 const (
 	Done    MaintenanceCompletionKind = "done"
@@ -1289,60 +1340,6 @@ func (e MaintenanceItemPatchScheduleMode) Valid() bool {
 	case MaintenanceItemPatchScheduleModeFromLastCompletion:
 		return true
 	case MaintenanceItemPatchScheduleModeOnce:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for MaintenanceTemplateItemCategory.
-const (
-	MaintenanceTemplateItemCategoryBrakes          MaintenanceTemplateItemCategory = "brakes"
-	MaintenanceTemplateItemCategoryFilters         MaintenanceTemplateItemCategory = "filters"
-	MaintenanceTemplateItemCategoryFluids          MaintenanceTemplateItemCategory = "fluids"
-	MaintenanceTemplateItemCategoryLegalInspection MaintenanceTemplateItemCategory = "legal_inspection"
-	MaintenanceTemplateItemCategoryOther           MaintenanceTemplateItemCategory = "other"
-	MaintenanceTemplateItemCategoryService         MaintenanceTemplateItemCategory = "service"
-	MaintenanceTemplateItemCategoryTires           MaintenanceTemplateItemCategory = "tires"
-)
-
-// Valid indicates whether the value is a known member of the MaintenanceTemplateItemCategory enum.
-func (e MaintenanceTemplateItemCategory) Valid() bool {
-	switch e {
-	case MaintenanceTemplateItemCategoryBrakes:
-		return true
-	case MaintenanceTemplateItemCategoryFilters:
-		return true
-	case MaintenanceTemplateItemCategoryFluids:
-		return true
-	case MaintenanceTemplateItemCategoryLegalInspection:
-		return true
-	case MaintenanceTemplateItemCategoryOther:
-		return true
-	case MaintenanceTemplateItemCategoryService:
-		return true
-	case MaintenanceTemplateItemCategoryTires:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for MaintenanceTemplateItemScheduleMode.
-const (
-	MaintenanceTemplateItemScheduleModeFixedGrid          MaintenanceTemplateItemScheduleMode = "fixed_grid"
-	MaintenanceTemplateItemScheduleModeFromLastCompletion MaintenanceTemplateItemScheduleMode = "from_last_completion"
-	MaintenanceTemplateItemScheduleModeOnce               MaintenanceTemplateItemScheduleMode = "once"
-)
-
-// Valid indicates whether the value is a known member of the MaintenanceTemplateItemScheduleMode enum.
-func (e MaintenanceTemplateItemScheduleMode) Valid() bool {
-	switch e {
-	case MaintenanceTemplateItemScheduleModeFixedGrid:
-		return true
-	case MaintenanceTemplateItemScheduleModeFromLastCompletion:
-		return true
-	case MaintenanceTemplateItemScheduleModeOnce:
 		return true
 	default:
 		return false
@@ -2742,8 +2739,17 @@ type AssistantStatus struct {
 		External bool   `json:"external"`
 		Name     string `json:"name"`
 	}] `json:"embedding_provider,omitempty"`
-	Enabled     bool `json:"enabled"`
-	UserEnabled bool `json:"user_enabled"`
+	Enabled bool `json:"enabled"`
+
+	// McpUrl Adresse des MCP-Servers für externe KI-Clients (Anmeldung mit API-Token)
+	McpUrl *string `json:"mcp_url,omitempty"`
+
+	// Model konfiguriertes Sprachmodell, z. B. claude-sonnet-4-5
+	Model       nullable.Nullable[string] `json:"model,omitempty"`
+	UserEnabled bool                      `json:"user_enabled"`
+
+	// WebSearch Websuche für öffentliche Herstellerangaben (ADR-032)
+	WebSearch *bool `json:"web_search,omitempty"`
 }
 
 // Attachment genau eines von file_id oder document_id; gleiches Fahrzeug (I-DO-1)
@@ -3207,6 +3213,9 @@ type DueStatus struct {
 	Level             DueLevel                                  `json:"level"`
 	ReasonTrigger     nullable.Nullable[DueStatusReasonTrigger] `json:"reason_trigger,omitempty"`
 	Title             string                                    `json:"title"`
+
+	// VehicleId Fahrzeug der Definition (für den Feed über alle Fahrzeuge)
+	VehicleId *openapi_types.UUID `json:"vehicle_id,omitempty"`
 }
 
 // DueStatusReasonTrigger defines model for DueStatus.ReasonTrigger.
@@ -3656,8 +3665,69 @@ type InvitationPage struct {
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
-	Email    openapi_types.Email `json:"email"`
-	Password *string             `json:"password,omitempty"`
+	// ClientKind android verlängert die Sitzung (Leerlauf 90 Tage, höchstens 365 Tage), damit die App angemeldet bleibt
+	ClientKind *LoginRequestClientKind `json:"client_kind,omitempty"`
+	Email      openapi_types.Email     `json:"email"`
+	Password   *string                 `json:"password,omitempty"`
+}
+
+// LoginRequestClientKind android verlängert die Sitzung (Leerlauf 90 Tage, höchstens 365 Tage), damit die App angemeldet bleibt
+type LoginRequestClientKind string
+
+// MaintenanceBook defines model for MaintenanceBook.
+type MaintenanceBook struct {
+	Id    string                `json:"id"`
+	Items []MaintenanceBookItem `json:"items"`
+	Make  string                `json:"make"`
+	Model string                `json:"model"`
+
+	// Source Herkunft der Intervalle und Hinweis zur Prüfung gegen das Serviceheft
+	Source  string                    `json:"source"`
+	Title   string                    `json:"title"`
+	Variant nullable.Nullable[string] `json:"variant,omitempty"`
+}
+
+// MaintenanceBookApply defines model for MaintenanceBookApply.
+type MaintenanceBookApply struct {
+	// AnchorDate Datum der letzten Durchführung bzw. Erstzulassung (Basis der ersten Fälligkeit)
+	AnchorDate     nullable.Nullable[openapi_types.Date] `json:"anchor_date,omitempty"`
+	AnchorOdometer nullable.Nullable[QuantityInput]      `json:"anchor_odometer,omitempty"`
+
+	// ItemKeys Nur diese Positionen übernehmen; fehlt das Feld, alle
+	ItemKeys *[]string `json:"item_keys,omitempty"`
+
+	// SinceNew Basis ist die Erstzulassung; erste Intervalle (first_interval_*) gelten
+	SinceNew *bool `json:"since_new,omitempty"`
+}
+
+// MaintenanceBookApplyResult defines model for MaintenanceBookApplyResult.
+type MaintenanceBookApplyResult struct {
+	Created []MaintenanceItem `json:"created"`
+
+	// Skipped Titel, die am Fahrzeug bereits als Wartungsdefinition existieren
+	Skipped []string `json:"skipped"`
+}
+
+// MaintenanceBookItem defines model for MaintenanceBookItem.
+type MaintenanceBookItem struct {
+	Category              MaintenanceBookItemCategory      `json:"category"`
+	Description           nullable.Nullable[string]        `json:"description,omitempty"`
+	FirstIntervalDistance nullable.Nullable[QuantityInput] `json:"first_interval_distance,omitempty"`
+
+	// FirstIntervalMonths Abweichendes erstes Intervall ab Erstzulassung (z. B. HU nach 36 Monaten)
+	FirstIntervalMonths nullable.Nullable[int]           `json:"first_interval_months,omitempty"`
+	IntervalDistance    nullable.Nullable[QuantityInput] `json:"interval_distance,omitempty"`
+	IntervalMonths      nullable.Nullable[int]           `json:"interval_months,omitempty"`
+	Key                 string                           `json:"key"`
+	Title               string                           `json:"title"`
+}
+
+// MaintenanceBookItemCategory defines model for MaintenanceBookItem.Category.
+type MaintenanceBookItemCategory string
+
+// MaintenanceBookPage defines model for MaintenanceBookPage.
+type MaintenanceBookPage struct {
+	Items []MaintenanceBook `json:"items"`
 }
 
 // MaintenanceCompletion Bei `skipped` ist `reason` Pflicht
@@ -3786,46 +3856,6 @@ type MaintenanceItemPatchCategory string
 
 // MaintenanceItemPatchScheduleMode defines model for MaintenanceItemPatch.ScheduleMode.
 type MaintenanceItemPatchScheduleMode string
-
-// MaintenanceTemplate defines model for MaintenanceTemplate.
-type MaintenanceTemplate struct {
-	AppliesTo      *string                   `json:"applies_to,omitempty"`
-	BodyTypes      *[]string                 `json:"body_types,omitempty"`
-	Description    *string                   `json:"description,omitempty"`
-	EnergyCarriers *[]string                 `json:"energy_carriers,omitempty"`
-	Id             string                    `json:"id"`
-	Items          []MaintenanceTemplateItem `json:"items"`
-
-	// Note Hinweis zur Herkunft der Richtwerte
-	Note  *string `json:"note,omitempty"`
-	Title string  `json:"title"`
-}
-
-// MaintenanceTemplateItem defines model for MaintenanceTemplateItem.
-type MaintenanceTemplateItem struct {
-	Category       MaintenanceTemplateItemCategory `json:"category"`
-	Description    *string                         `json:"description,omitempty"`
-	IntervalKm     nullable.Nullable[int]          `json:"interval_km,omitempty"`
-	IntervalMonths nullable.Nullable[int]          `json:"interval_months,omitempty"`
-	Key            string                          `json:"key"`
-
-	// Optional nur bei bestimmter Ausstattung (z. B. Automatikgetriebe)
-	Optional     *bool                               `json:"optional,omitempty"`
-	ScheduleMode MaintenanceTemplateItemScheduleMode `json:"schedule_mode"`
-	Title        string                              `json:"title"`
-}
-
-// MaintenanceTemplateItemCategory defines model for MaintenanceTemplateItem.Category.
-type MaintenanceTemplateItemCategory string
-
-// MaintenanceTemplateItemScheduleMode defines model for MaintenanceTemplateItem.ScheduleMode.
-type MaintenanceTemplateItemScheduleMode string
-
-// MaintenanceTemplatePage defines model for MaintenanceTemplatePage.
-type MaintenanceTemplatePage struct {
-	Items      []MaintenanceTemplate     `json:"items"`
-	NextCursor nullable.Nullable[string] `json:"next_cursor"`
-}
 
 // MaintenanceThresholds MA-05; leer = Vorgabe
 type MaintenanceThresholds struct {
@@ -4347,7 +4377,10 @@ type Proposal struct {
 	Operation string                                `json:"operation"`
 	ResultId  nullable.Nullable[openapi_types.UUID] `json:"result_id,omitempty"`
 	Status    ProposalStatus                        `json:"status"`
-	VehicleId openapi_types.UUID                    `json:"vehicle_id"`
+
+	// Summary Kurzbeschreibung für die Bestätigung, z. B. „Fahrt starten bei 143.520 km · Geschäftlich“
+	Summary   *string            `json:"summary,omitempty"`
+	VehicleId openapi_types.UUID `json:"vehicle_id"`
 }
 
 // ProposalStatus defines model for Proposal.Status.
@@ -4705,6 +4738,9 @@ type TripCategory struct {
 	Kind            TripCategoryKind    `json:"kind"`
 	Name            string              `json:"name"`
 	PurposeRequired *bool               `json:"purpose_required,omitempty"`
+
+	// Version entspricht dem ETag (ADR-012)
+	Version *int `json:"version,omitempty"`
 }
 
 // TripCategoryKind defines model for TripCategory.Kind.
@@ -5273,6 +5309,12 @@ type RunImportJSONBody = map[string]interface{}
 type RunImportParams struct {
 	// IdempotencyKey Für Aktionen ohne eigene ID (ADR-012); Ergebnis 24 h wiederholbar
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListMaintenanceBooksParams defines parameters for ListMaintenanceBooks.
+type ListMaintenanceBooksParams struct {
+	// Make Nur Bücher dieser Marke (Groß-/Kleinschreibung egal)
+	Make *string `form:"make,omitempty" json:"make,omitempty"`
 }
 
 // UpdateMeApplicationMergePatchPlusJSONBody defines parameters for UpdateMe.
@@ -5867,6 +5909,9 @@ type AddVehicleImageJSONRequestBody = VehicleImageCreate
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = Invitation
 
+// ApplyMaintenanceBookJSONRequestBody defines body for ApplyMaintenanceBook for application/json ContentType.
+type ApplyMaintenanceBookJSONRequestBody = MaintenanceBookApply
+
 // CreateMaintenanceItemJSONRequestBody defines body for CreateMaintenanceItem for application/json ContentType.
 type CreateMaintenanceItemJSONRequestBody = MaintenanceItemCreate
 
@@ -6040,9 +6085,9 @@ type ServerInterface interface {
 	// DeclineInvitation Einladung ablehnen
 	// (POST /invitations/decline)
 	DeclineInvitation(w http.ResponseWriter, r *http.Request)
-	// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
-	// (GET /maintenance-templates)
-	ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request)
+	// ListMaintenanceBooks Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten
+	// (GET /maintenance-books)
+	ListMaintenanceBooks(w http.ResponseWriter, r *http.Request, params ListMaintenanceBooksParams)
 	// DeleteMe Eigenes Konto löschen (ID-05)
 	// (DELETE /me)
 	DeleteMe(w http.ResponseWriter, r *http.Request)
@@ -6259,6 +6304,9 @@ type ServerInterface interface {
 	// RevokeInvitation Einladung zurückziehen
 	// (DELETE /vehicles/{vehicle_id}/invitations/{invitation_id})
 	RevokeInvitation(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, invitationId InvitationId)
+	// ApplyMaintenanceBook Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent)
+	// (POST /vehicles/{vehicle_id}/maintenance-books/{book_id}/apply)
+	ApplyMaintenanceBook(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, bookId string)
 	// ListMaintenanceItems Wartungsdefinitionen auflisten
 	// (GET /vehicles/{vehicle_id}/maintenance-items)
 	ListMaintenanceItems(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, params ListMaintenanceItemsParams)
@@ -6643,9 +6691,9 @@ func (_ Unimplemented) DeclineInvitation(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
-// (GET /maintenance-templates)
-func (_ Unimplemented) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
+// ListMaintenanceBooks Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten
+// (GET /maintenance-books)
+func (_ Unimplemented) ListMaintenanceBooks(w http.ResponseWriter, r *http.Request, params ListMaintenanceBooksParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7078,6 +7126,12 @@ func (_ Unimplemented) CreateInvitation(w http.ResponseWriter, r *http.Request, 
 // RevokeInvitation Einladung zurückziehen
 // (DELETE /vehicles/{vehicle_id}/invitations/{invitation_id})
 func (_ Unimplemented) RevokeInvitation(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, invitationId InvitationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ApplyMaintenanceBook Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent)
+// (POST /vehicles/{vehicle_id}/maintenance-books/{book_id}/apply)
+func (_ Unimplemented) ApplyMaintenanceBook(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, bookId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8233,11 +8287,30 @@ func (siw *ServerInterfaceWrapper) DeclineInvitation(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
-// ListMaintenanceTemplates operation middleware
-func (siw *ServerInterfaceWrapper) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
+// ListMaintenanceBooks operation middleware
+func (siw *ServerInterfaceWrapper) ListMaintenanceBooks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListMaintenanceBooksParams
+
+	// ------------- Optional query parameter "make" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "make", r.URL.Query(), &params.Make, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "make"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "make", Err: err})
+		}
+		return
+	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListMaintenanceTemplates(w, r)
+		siw.Handler.ListMaintenanceBooks(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11079,6 +11152,41 @@ func (siw *ServerInterfaceWrapper) RevokeInvitation(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeInvitation(w, r, vehicleId, invitationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyMaintenanceBook operation middleware
+func (siw *ServerInterfaceWrapper) ApplyMaintenanceBook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "vehicle_id" -------------
+	var vehicleId VehicleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vehicle_id", chi.URLParam(r, "vehicle_id"), &vehicleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "vehicle_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "book_id" -------------
+	var bookId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "book_id", chi.URLParam(r, "book_id"), &bookId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "book_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyMaintenanceBook(w, r, vehicleId, bookId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14216,10 +14324,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/vehicles/{vehicle_id}/maintenance/status", wrapper.GetMaintenanceStatus)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/me/due", wrapper.GetDueFeed)
+		r.Get(options.BaseURL+"/maintenance-books", wrapper.ListMaintenanceBooks)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/maintenance-templates", wrapper.ListMaintenanceTemplates)
+		r.Post(options.BaseURL+"/vehicles/{vehicle_id}/maintenance-books/{book_id}/apply", wrapper.ApplyMaintenanceBook)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/due", wrapper.GetDueFeed)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/vehicles/{vehicle_id}/service-entries", wrapper.ListServiceEntrys)
@@ -18042,16 +18153,17 @@ func (response DeclineInvitation429ApplicationProblemPlusJSONResponse) VisitDecl
 	return err
 }
 
-type ListMaintenanceTemplatesRequestObject struct {
+type ListMaintenanceBooksRequestObject struct {
+	Params ListMaintenanceBooksParams
 }
 
-type ListMaintenanceTemplatesResponseObject interface {
-	VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error
+type ListMaintenanceBooksResponseObject interface {
+	VisitListMaintenanceBooksResponse(w http.ResponseWriter) error
 }
 
-type ListMaintenanceTemplates200JSONResponse MaintenanceTemplatePage
+type ListMaintenanceBooks200JSONResponse MaintenanceBookPage
 
-func (response ListMaintenanceTemplates200JSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
+func (response ListMaintenanceBooks200JSONResponse) VisitListMaintenanceBooksResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -18063,11 +18175,11 @@ func (response ListMaintenanceTemplates200JSONResponse) VisitListMaintenanceTemp
 	return err
 }
 
-type ListMaintenanceTemplates401ApplicationProblemPlusJSONResponse struct {
+type ListMaintenanceBooks401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
 
-func (response ListMaintenanceTemplates401ApplicationProblemPlusJSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
+func (response ListMaintenanceBooks401ApplicationProblemPlusJSONResponse) VisitListMaintenanceBooksResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -18079,11 +18191,27 @@ func (response ListMaintenanceTemplates401ApplicationProblemPlusJSONResponse) Vi
 	return err
 }
 
-type ListMaintenanceTemplates429ApplicationProblemPlusJSONResponse struct {
+type ListMaintenanceBooks403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListMaintenanceBooks403ApplicationProblemPlusJSONResponse) VisitListMaintenanceBooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaintenanceBooks429ApplicationProblemPlusJSONResponse struct {
 	TooManyRequestsApplicationProblemPlusJSONResponse
 }
 
-func (response ListMaintenanceTemplates429ApplicationProblemPlusJSONResponse) VisitListMaintenanceTemplatesResponse(w http.ResponseWriter) error {
+func (response ListMaintenanceBooks429ApplicationProblemPlusJSONResponse) VisitListMaintenanceBooksResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -24347,6 +24475,20 @@ type UploadFileResponseObject interface {
 	VisitUploadFileResponse(w http.ResponseWriter) error
 }
 
+type UploadFile200JSONResponse FileMeta
+
+func (response UploadFile200JSONResponse) VisitUploadFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UploadFile201ResponseHeaders struct {
 	ETag     *string
 	Location *string
@@ -24891,14 +25033,14 @@ type PreviewFileResponseObject interface {
 	VisitPreviewFileResponse(w http.ResponseWriter) error
 }
 
-type PreviewFile200ImagewebpResponse struct {
+type PreviewFile200ImagejpegResponse struct {
 	Body          io.Reader
 	ContentLength int64
 }
 
-func (response PreviewFile200ImagewebpResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
+func (response PreviewFile200ImagejpegResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
 
-	w.Header().Set("Content-Type", "image/webp")
+	w.Header().Set("Content-Type", "image/jpeg")
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
 	}
@@ -26629,6 +26771,129 @@ type RevokeInvitation429ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RevokeInvitation429ApplicationProblemPlusJSONResponse) VisitRevokeInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBookRequestObject struct {
+	VehicleId VehicleId `json:"vehicle_id"`
+	BookId    string    `json:"book_id"`
+	Body      *ApplyMaintenanceBookJSONRequestBody
+}
+
+type ApplyMaintenanceBookResponseObject interface {
+	VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error
+}
+
+type ApplyMaintenanceBook200JSONResponse MaintenanceBookApplyResult
+
+func (response ApplyMaintenanceBook200JSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook400ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook401ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook403ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook404ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook422ApplicationProblemPlusJSONResponse struct {
+	UnprocessableApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook422ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyMaintenanceBook429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyMaintenanceBook429ApplicationProblemPlusJSONResponse) VisitApplyMaintenanceBookResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -34176,9 +34441,9 @@ type StrictServerInterface interface {
 	// DeclineInvitation Einladung ablehnen
 	// (POST /invitations/decline)
 	DeclineInvitation(ctx context.Context, request DeclineInvitationRequestObject) (DeclineInvitationResponseObject, error)
-	// ListMaintenanceTemplates Vorlagen für Wartungspläne (OP-MA-1)
-	// (GET /maintenance-templates)
-	ListMaintenanceTemplates(ctx context.Context, request ListMaintenanceTemplatesRequestObject) (ListMaintenanceTemplatesResponseObject, error)
+	// ListMaintenanceBooks Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten
+	// (GET /maintenance-books)
+	ListMaintenanceBooks(ctx context.Context, request ListMaintenanceBooksRequestObject) (ListMaintenanceBooksResponseObject, error)
 	// DeleteMe Eigenes Konto löschen (ID-05)
 	// (DELETE /me)
 	DeleteMe(ctx context.Context, request DeleteMeRequestObject) (DeleteMeResponseObject, error)
@@ -34395,6 +34660,9 @@ type StrictServerInterface interface {
 	// RevokeInvitation Einladung zurückziehen
 	// (DELETE /vehicles/{vehicle_id}/invitations/{invitation_id})
 	RevokeInvitation(ctx context.Context, request RevokeInvitationRequestObject) (RevokeInvitationResponseObject, error)
+	// ApplyMaintenanceBook Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent)
+	// (POST /vehicles/{vehicle_id}/maintenance-books/{book_id}/apply)
+	ApplyMaintenanceBook(ctx context.Context, request ApplyMaintenanceBookRequestObject) (ApplyMaintenanceBookResponseObject, error)
 	// ListMaintenanceItems Wartungsdefinitionen auflisten
 	// (GET /vehicles/{vehicle_id}/maintenance-items)
 	ListMaintenanceItems(ctx context.Context, request ListMaintenanceItemsRequestObject) (ListMaintenanceItemsResponseObject, error)
@@ -35593,23 +35861,25 @@ func (sh *strictHandler) DeclineInvitation(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// ListMaintenanceTemplates operation middleware
-func (sh *strictHandler) ListMaintenanceTemplates(w http.ResponseWriter, r *http.Request) {
-	var request ListMaintenanceTemplatesRequestObject
+// ListMaintenanceBooks operation middleware
+func (sh *strictHandler) ListMaintenanceBooks(w http.ResponseWriter, r *http.Request, params ListMaintenanceBooksParams) {
+	var request ListMaintenanceBooksRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListMaintenanceTemplates(ctx, request.(ListMaintenanceTemplatesRequestObject))
+		return sh.ssi.ListMaintenanceBooks(ctx, request.(ListMaintenanceBooksRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListMaintenanceTemplates")
+		handler = middleware(handler, "ListMaintenanceBooks")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListMaintenanceTemplatesResponseObject); ok {
-		if err := validResponse.VisitListMaintenanceTemplatesResponse(w); err != nil {
+	} else if validResponse, ok := response.(ListMaintenanceBooksResponseObject); ok {
+		if err := validResponse.VisitListMaintenanceBooksResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -37664,6 +37934,40 @@ func (sh *strictHandler) RevokeInvitation(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeInvitationResponseObject); ok {
 		if err := validResponse.VisitRevokeInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApplyMaintenanceBook operation middleware
+func (sh *strictHandler) ApplyMaintenanceBook(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, bookId string) {
+	var request ApplyMaintenanceBookRequestObject
+
+	request.VehicleId = vehicleId
+	request.BookId = bookId
+
+	var body ApplyMaintenanceBookJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApplyMaintenanceBook(ctx, request.(ApplyMaintenanceBookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApplyMaintenanceBook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApplyMaintenanceBookResponseObject); ok {
+		if err := validResponse.VisitApplyMaintenanceBookResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

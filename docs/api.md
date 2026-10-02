@@ -4,8 +4,8 @@ Vectra hat eine REST-API unter `/api/v1` (JSON, UTF-8). Die Web-App und die Andr
 
 ## 1. Zugang: API-Token
 
-1. In der Web-App **Einstellungen → API-Tokens** öffnen.
-2. Namen, Gültigkeit (höchstens 2 Jahre), Rechte (Scopes) und optional ein einzelnes Fahrzeug wählen.
+1. In der Web-App **Einstellungen → KI-Zugang (MCP)** öffnen. Dasselbe Token gilt für den MCP-Server und die REST-API.
+2. Namen, Gültigkeit, Rechte (Scopes) und optional einzelne Fahrzeuge wählen.
 3. Das Token (`vct_…`) wird **nur einmal** angezeigt – sicher ablegen. Gespeichert wird nur ein Hash.
 
 Jede Anfrage trägt das Token im Header:
@@ -18,13 +18,11 @@ curl -s -H "Authorization: Bearer $TOKEN" $VECTRA/api/v1/vehicles
 
 | Scope | erlaubt |
 |---|---|
-| `vehicles:read` | alles lesen (Fahrzeuge, Stände, Verbrauch, Öl, Wartung, Historie) |
-| `entries:write` | Einträge anlegen und ändern (Kilometerstand, Tanken, Öl, Wartung erledigen) |
+| `vehicles:read` | alles lesen (Fahrzeuge, Stände, Verbrauch, Öl, Wartung, Kosten, Historie) – immer enthalten |
+| `entries:write` | Einträge anlegen und ändern (Kilometerstand, Tanken, Öl, Wartung erledigen …) |
 | `entries:delete` | Einträge löschen |
-| `sharing:manage` | Freigaben verwalten |
-| `admin` | Installationseinstellungen (nur für Administratoren vergebbar) |
 
-Wirksam ist immer die **Schnittmenge** aus Token-Scopes und deinen Rollen am Fahrzeug: Ein Token kann nie mehr als du selbst. Ist das Token auf ein Fahrzeug beschränkt, sind alle anderen Fahrzeuge unsichtbar (`404`). API-Tokens können keine weiteren Tokens anlegen. Widerrufen geht jederzeit in den Einstellungen; Einträge über die API tragen die Herkunft `api` und erscheinen in der Änderungshistorie mit Akteur `api_token`.
+Welche Operation welchen Scope braucht, steht in der Spezifikation (`x-vectra-scope`); Operationen ohne Bearer-Freigabe (z. B. Tokens anlegen) sind mit Token gesperrt. Wirksam ist immer die **Schnittmenge** aus Token-Scopes und deinen Rollen am Fahrzeug: Ein Token kann nie mehr als du selbst. Ist das Token auf ein Fahrzeug beschränkt, sind alle anderen Fahrzeuge unsichtbar (`404`). API-Tokens können keine weiteren Tokens anlegen. Widerrufen geht jederzeit in den Einstellungen; Einträge über die API tragen die Herkunft `api` und erscheinen in der Änderungshistorie mit Akteur `api_token`.
 
 ## 2. Konventionen
 
@@ -61,7 +59,8 @@ VID=$(curl -s -H "Authorization: Bearer $TOKEN" $VECTRA/api/v1/vehicles | jq -r 
 | nur Fälligkeiten | `GET /vehicles/{id}/maintenance/status` |
 | Fälligkeiten aller Fahrzeuge | `GET /me/due?min_level=upcoming` |
 | **Änderungshistorie** | `GET /vehicles/{id}/audit-events` (optional `?object_id=<eintrag>`) |
-| Wartungsplan-Vorlagen | `GET /maintenance-templates` |
+| Wartungsbücher (Vorlagen) | `GET /maintenance-books` |
+| Kosten, Fahrten, Service, Dokumente | siehe `api/openapi.yaml` (Tags Costs, Trips, ServiceHistory, Documents) |
 
 ```bash
 # Durchschnittsverbrauch

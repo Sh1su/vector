@@ -1015,6 +1015,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maintenance-books": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wartungsbücher (Vorlagen mit Herstellerintervallen) auflisten */
+        get: operations["listMaintenanceBooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicles/{vehicle_id}/maintenance-books/{book_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Wartungsbuch übernehmen (legt Wartungsdefinitionen an; idempotent) */
+        post: operations["applyMaintenanceBook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/due": {
         parameters: {
             query?: never;
@@ -1024,26 +1058,6 @@ export interface paths {
         };
         /** Fälligkeiten über alle Fahrzeuge (sortiert nach MA-07) */
         get: operations["getDueFeed"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/maintenance-templates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Vorlagen für Wartungspläne (OP-MA-1)
-         * @description Eingebaute Richtwerte, z. B. für Mercedes-Benz CDI-Transporter. Der Client übernimmt ausgewählte Positionen mit eigenen Intervallen und Ankern über `createMaintenanceItem`.
-         */
-        get: operations["listMaintenanceTemplates"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2104,6 +2118,11 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            /**
+             * @description android verlängert die Sitzung (Leerlauf 90 Tage, höchstens 365 Tage), damit die App angemeldet bleibt
+             * @enum {string}
+             */
+            client_kind?: "web" | "android";
         };
         SetupRequest: {
             /** @description nur nötig, wenn VECTRA_SETUP_TOKEN gesetzt ist */
@@ -2797,6 +2816,8 @@ export interface components {
         TripCategory: {
             /** Format: uuid */
             readonly id?: string;
+            /** @description entspricht dem ETag (ADR-012) */
+            readonly version?: number;
             name: string;
             /** @enum {string} */
             kind: "private" | "business" | "commute" | "other";
@@ -2944,6 +2965,11 @@ export interface components {
         DueStatus: {
             /** Format: uuid */
             item_id: string;
+            /**
+             * Format: uuid
+             * @description Fahrzeug der Definition (für den Feed über alle Fahrzeuge)
+             */
+            vehicle_id?: string;
             title: string;
             level: components["schemas"]["DueLevel"];
             /** @enum {string|null} */
@@ -2981,6 +3007,48 @@ export interface components {
             active?: boolean;
             note?: string;
             readonly status?: components["schemas"]["DueStatus"];
+        };
+        MaintenanceBookItem: {
+            key: string;
+            title: string;
+            description?: string | null;
+            /** @enum {string} */
+            category: "service" | "legal_inspection" | "tires" | "fluids" | "brakes" | "filters" | "other";
+            interval_months?: number | null;
+            interval_distance?: components["schemas"]["QuantityInput"] | null;
+            /** @description Abweichendes erstes Intervall ab Erstzulassung (z. B. HU nach 36 Monaten) */
+            first_interval_months?: number | null;
+            first_interval_distance?: components["schemas"]["QuantityInput"] | null;
+        };
+        MaintenanceBook: {
+            id: string;
+            make: string;
+            model: string;
+            variant?: string | null;
+            title: string;
+            /** @description Herkunft der Intervalle und Hinweis zur Prüfung gegen das Serviceheft */
+            source: string;
+            items: components["schemas"]["MaintenanceBookItem"][];
+        };
+        MaintenanceBookPage: {
+            items: components["schemas"]["MaintenanceBook"][];
+        };
+        MaintenanceBookApply: {
+            /** @description Nur diese Positionen übernehmen; fehlt das Feld, alle */
+            item_keys?: string[];
+            /**
+             * Format: date
+             * @description Datum der letzten Durchführung bzw. Erstzulassung (Basis der ersten Fälligkeit)
+             */
+            anchor_date?: string | null;
+            anchor_odometer?: components["schemas"]["QuantityInput"] | null;
+            /** @description Basis ist die Erstzulassung; erste Intervalle (first_interval_*) gelten */
+            since_new?: boolean;
+        };
+        MaintenanceBookApplyResult: {
+            created: components["schemas"]["MaintenanceItem"][];
+            /** @description Titel, die am Fahrzeug bereits als Wartungsdefinition existieren */
+            skipped: string[];
         };
         MaintenanceItemCreate: {
             /**
@@ -3058,34 +3126,6 @@ export interface components {
         };
         DueStatusPage: {
             items: components["schemas"]["DueStatus"][];
-            next_cursor: string | null;
-        };
-        MaintenanceTemplateItem: {
-            key: string;
-            title: string;
-            description?: string;
-            /** @enum {string} */
-            category: "service" | "legal_inspection" | "tires" | "fluids" | "brakes" | "filters" | "other";
-            /** @enum {string} */
-            schedule_mode: "once" | "from_last_completion" | "fixed_grid";
-            interval_months?: number | null;
-            interval_km?: number | null;
-            /** @description nur bei bestimmter Ausstattung (z. B. Automatikgetriebe) */
-            optional?: boolean;
-        };
-        MaintenanceTemplate: {
-            id: string;
-            title: string;
-            description?: string;
-            applies_to?: string;
-            body_types?: string[];
-            energy_carriers?: string[];
-            /** @description Hinweis zur Herkunft der Richtwerte */
-            note?: string;
-            items: components["schemas"]["MaintenanceTemplateItem"][];
-        };
-        MaintenanceTemplatePage: {
-            items: components["schemas"]["MaintenanceTemplate"][];
             next_cursor: string | null;
         };
         CostItem: {
@@ -3858,6 +3898,12 @@ export interface components {
             consent_required: boolean;
             /** Format: date-time */
             consent_given_at?: string | null;
+            /** @description konfiguriertes Sprachmodell, z. B. claude-sonnet-4-5 */
+            model?: string | null;
+            /** @description Websuche für öffentliche Herstellerangaben (ADR-032) */
+            web_search?: boolean;
+            /** @description Adresse des MCP-Servers für externe KI-Clients (Anmeldung mit API-Token) */
+            mcp_url?: string;
         };
         AssistantConsent: {
             accept_external_provider: boolean;
@@ -3886,6 +3932,8 @@ export interface components {
             id: string;
             /** @example createOilEntry */
             operation: string;
+            /** @description Kurzbeschreibung für die Bestätigung, z. B. „Fahrt starten bei 143.520 km · Geschäftlich“ */
+            summary?: string;
             /** Format: uuid */
             vehicle_id: string;
             body: {
@@ -6678,6 +6726,65 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    listMaintenanceBooks: {
+        parameters: {
+            query?: {
+                /** @description Nur Bücher dieser Marke (Groß-/Kleinschreibung egal) */
+                make?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceBookPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    applyMaintenanceBook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: components["parameters"]["VehicleId"];
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceBookApply"];
+            };
+        };
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceBookApplyResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getDueFeed: {
         parameters: {
             query?: {
@@ -6701,28 +6808,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["Unprocessable"];
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
-    listMaintenanceTemplates: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Erfolg */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaintenanceTemplatePage"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -7497,6 +7582,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Datei mit gleichem Inhalt existiert bereits (DO-02, `duplicate_of` gesetzt, nichts gespeichert) oder idempotente Wiederholung mit gleicher ID */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileMeta"];
+                };
+            };
             /** @description Erfolg */
             201: {
                 headers: {
@@ -7614,7 +7708,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "image/webp": string;
+                    "image/jpeg": string;
                 };
             };
             401: components["responses"]["Unauthorized"];

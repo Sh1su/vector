@@ -1,6 +1,7 @@
 package app.vectra.core
 
 import app.vectra.core.util.Format
+import app.vectra.core.util.MoneyFormat
 import app.vectra.core.util.UuidV7
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -47,5 +48,14 @@ class UtilTest {
     @Test
     fun `Datum in der Zeitzone der Erfassung`() {
         assertEquals("29.09.2026, 08:00", Format.dateTime("2026-09-29T06:00:00Z", "Europe/Berlin"))
+    }
+
+    @Test
+    fun `Geldbeträge in kleinster Einheit`() {
+        assertEquals("1.234,56 €", MoneyFormat.format(123_456, "EUR"))
+        assertEquals("1.500 JPY", MoneyFormat.format(1_500, "JPY"))
+        assertEquals(8_990L, MoneyFormat.parse("89,90", "EUR"))
+        assertEquals(12_000L, MoneyFormat.parse("120", "EUR"))
+        assertNull(MoneyFormat.parse("abc", "EUR"))
     }
 }

@@ -1,8 +1,14 @@
 package server
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/sh1su/vector/backend/internal/identity"
 )
 
 func fill(at string, km float64, liters float64, full bool) map[string]any {
@@ -107,4 +113,40 @@ func TestFuelFillsConsumptionAndOdometer(t *testing.T) {
 	if len(r.body["items"].([]any)) != 3 {
 		t.Fatalf("page 2: %s", r.raw)
 	}
+}
+
+// Ersteinrichtung ohne konfiguriertes Token nur, solange kein Konto existiert;
+// Änderungshistorie und Spezifikation sind per API abrufbar.
+func TestSetupStatusHistoryAndSpec(t *testing.T) {
+	e := newEnv(t)
+	anon := e.client()
+	r := anon.do("GET", "/auth/setup", nil)
+	expect(t, r, 200, "setup status")
+	if r.body["setup_required"] != true || r.body["token_required"] != true {
+		t.Fatalf("status: %s", r.raw)
+	}
+	ids := identity.NewService(e.pool, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := ids.Setup(context.Background(), "", "first@example.org", "Erste", pw); err != nil {
+		t.Fatalf("tokenless setup: %v", err)
+	}
+	if _, err := ids.Setup(context.Background(), "", "second@example.org", "Zweite", pw); err == nil {
+		t.Fatal("second setup must fail")
+	}
+	if r = anon.do("GET", "/auth/setup", nil); r.body["setup_required"] != false {
+		t.Fatalf("status after setup: %s", r.raw)
+	}
+	c := e.client()
+	c.login("first@example.org", pw)
+	vid := c.do("POST", "/vehicles", vehiclePayload("A")).body["id"].(string)
+	expect(t, c.do("POST", "/vehicles/"+vid+"/odometer/readings", reading("2026-09-01T10:00:00+02:00", 1000)), 201, "reading")
+	r = c.do("GET", "/vehicles/"+vid+"/audit-events", nil)
+	expect(t, r, 200, "audit")
+	if !strings.Contains(string(r.raw), "odometer.reading_recorded") {
+		t.Fatalf("audit: %s", r.raw)
+	}
+	res, err := http.Get(e.srv.URL + "/api/v1/openapi.json")
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("openapi.json: %v", err)
+	}
+	res.Body.Close()
 }

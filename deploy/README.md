@@ -33,27 +33,20 @@ Danach `https://<VECTRA_DOMAIN>` öffnen: Solange noch kein Konto existiert, lei
 
 - Selbst bauen statt ziehen: `docker compose build` (im Repository-Ordner `deploy/`).
 - Lokal ohne TLS: `docker compose run --rm -p 8080:8080 -e VECTRA_COOKIE_SECURE=false vectra` und `http://localhost:8080` öffnen.
-- Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump`.
+- Backups (ADR-030) folgen mit Iteration 4. Bis dahin: `docker compose exec postgres pg_dump -U vectra -Fc vectra > vectra.dump` und das Volume `files` (Dokumente, Fahrzeugbilder) sichern, z. B. `docker run --rm -v vectra_files:/data -v "$PWD":/b alpine tar czf /b/files.tgz -C /data .`.
 
 ## KI-Assistent (optional)
 
-Vectra ist ohne Assistent voll nutzbar. Er wird in zwei Schritten eingeschaltet:
+Vectra ist ohne Assistent voll nutzbar. Zum Einschalten in `.env` eintragen und `docker compose up -d`:
 
-1. **Anbieter konfigurieren** (in `.env`, danach `docker compose up -d`):
+```bash
+VECTRA_ASSISTANT_PROVIDER=anthropic
+VECTRA_ASSISTANT_MODEL=claude-sonnet-4-5      # frei wählbar, z. B. auch neuere Claude-Modelle
+ANTHROPIC_API_KEY=sk-ant-…
+VECTRA_ASSISTANT_WEB_SEARCH=true              # Websuche für Herstellerangaben
+```
 
-   | Variable | Bedeutung |
-   |---|---|
-   | `VECTRA_ASSISTANT_PROVIDER` | `anthropic` (Claude), `ollama` (lokal) oder `openai_compatible` (llama.cpp, vLLM, andere) |
-   | `VECTRA_ASSISTANT_MODEL` | Modellname; bei `anthropic` leer = `claude-opus-5-5` |
-   | `VECTRA_ASSISTANT_API_KEY` | API-Schlüssel (bei `anthropic` Pflicht) |
-   | `VECTRA_ASSISTANT_BASE_URL` | bei `ollama` Standard `http://ollama:11434/v1`, bei `openai_compatible` Pflicht |
-   | `VECTRA_ASSISTANT_EXTERNAL` | `true`, wenn Daten den Server verlassen; dann muss jede Person einmalig zustimmen |
-   | `VECTRA_ASSISTANT_NAME` | Anzeigename des Anbieters |
-   | `VECTRA_ASSISTANT_DAILY_LIMIT`, `VECTRA_ASSISTANT_RETENTION_DAYS`, `VECTRA_ASSISTANT_TIMEOUT_SECONDS` | Tageslimit je Person (200), Aufbewahrung der Unterhaltungen in Tagen (30), Zeitlimit je Modellaufruf (120 s) |
-
-2. **Als Admin aktivieren:** Web-App → Einstellungen → Installation → „KI-Assistent aktivieren“. Danach schaltet jede Person ihn auf der Seite „Assistent“ für sich ein.
-
-Der Assistent schreibt nie selbst. Er liest mit den Rechten der angemeldeten Person und legt Änderungen als **Vorschlag** an, den die Person bestätigt, bearbeitet oder verwirft (ADR-026). Bei Claude ist der serverseitige Ausweichpfad bei Ablehnungen aktiv (`VECTRA_ASSISTANT_FALLBACKS=false` schaltet ihn ab). Lokale Modelle über Ollama laufen nicht im Basis-Stack (Speicherbudget, ADR-030) und brauchen einen eigenen Container.
+Der Assistent erscheint dann in Web und App; Änderungen legt er als Vorschlag an, den du bestätigst. Externe KI-Clients (Claude Desktop, Claude Code) verbinden sich über den MCP-Server mit einem persönlichen Token – das geht auch ohne eingeschalteten Assistenten. Details: [`docs/phase-3/30-assistent.md`](../docs/phase-3/30-assistent.md).
 
 ## Nur im Heimnetz (eigener Reverse-Proxy, z. B. Nginx Proxy Manager)
 

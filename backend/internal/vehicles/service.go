@@ -29,13 +29,17 @@ type Meta struct {
 	Status           string
 	SaleDate         *time.Time
 	DisplayName      string
-	EnergyCarriers   []string
 	DefaultCurrency  string
-	// Kanonische Kapazitäten aus den Stammdaten; 0 = unbekannt.
-	TankCapacityMl   map[string]int64
-	BatteryWh        int64
-	OilRangeMl       int64
-	OilCapacityMl    int64
+	PurchaseDate     *time.Time
+	Purchase         *Money
+	Sale             *Money
+	EstimatedValue   *DateMoney
+	EnergyCarriers   []string
+	// Kanonische Kapazitäten aus den Stammdaten (Fuel, Oil); 0 = unbekannt.
+	TankCapacityMl map[string]int64
+	BatteryWh      int64
+	OilRangeMl     int64
+	OilCapacityMl  int64
 }
 
 func canonicalOf(q *Q) int64 {
@@ -308,7 +312,7 @@ type Page struct {
 
 // List liefert alle Fahrzeuge, an denen das Konto Mitglied ist.
 func (s *Service) List(ctx context.Context, actor kernel.Actor, status *string, cursor *string, limit int) (Page, error) {
-	members, err := identity.ActorVehicles(ctx, s.pool, actor)
+	members, err := identity.MemberVehicles(ctx, s.pool, actor.AccountID)
 	if err != nil {
 		return Page{}, err
 	}
@@ -524,18 +528,33 @@ func LoadMeta(ctx context.Context, db store.DBTX, id uuid.UUID, lock bool) (Meta
 	if err != nil {
 		return Meta{}, err
 	}
-	m := Meta{ID: id, UsageMeter: v.UsageMeter, OdometerRequired: v.OdometerRequired, OwnerTimeZone: v.OwnerTimeZone, Status: v.Status,
-		DisplayName: v.DisplayName, EnergyCarriers: v.EnergyCarriers, DefaultCurrency: v.DefaultCurrency, TankCapacityMl: map[string]int64{}}
-	var ex extra
-	_ = json.Unmarshal(v.Extra, &ex)
-	for k, q := range ex.TankCapacity {
+	m := Meta{ID: id, UsageMeter: v.UsageMeter, OdometerRequired: v.OdometerRequired, OwnerTimeZone: v.OwnerTimeZone, Status: v.Status, DisplayName: v.DisplayName}
+	m.DefaultCurrency = v.DefaultCurrency
+	m.EnergyCarriers, m.TankCapacityMl = v.EnergyCarriers, map[string]int64{}
+	var capEx extra
+	_ = json.Unmarshal(v.Extra, &capEx)
+	for k, q := range capEx.TankCapacity {
 		q := q
 		m.TankCapacityMl[k] = canonicalOf(&q)
 	}
-	m.BatteryWh, m.OilRangeMl, m.OilCapacityMl = canonicalOf(ex.BatteryUsableCapacity), canonicalOf(ex.OilDipstickRange), canonicalOf(ex.OilCapacity)
+	m.BatteryWh, m.OilRangeMl, m.OilCapacityMl = canonicalOf(capEx.BatteryUsableCapacity), canonicalOf(capEx.OilDipstickRange), canonicalOf(capEx.OilCapacity)
 	if v.SaleDate.Valid {
 		t := v.SaleDate.Time
 		m.SaleDate = &t
+		if v.SaleAmount.Valid {
+			m.Sale = &Money{AmountMinor: v.SaleAmount.Int64, Currency: v.SaleCurrency.String}
+		}
+	}
+	if v.PurchaseDate.Valid {
+		t := v.PurchaseDate.Time
+		m.PurchaseDate = &t
+		if v.PurchaseAmount.Valid {
+			m.Purchase = &Money{AmountMinor: v.PurchaseAmount.Int64, Currency: v.PurchaseCurrency.String}
+		}
+	}
+	var ex extra
+	if json.Unmarshal(v.Extra, &ex) == nil {
+		m.EstimatedValue = ex.EstimatedValue
 	}
 	return m, nil
 }
