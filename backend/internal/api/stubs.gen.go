@@ -541,6 +541,10 @@ func (NotImplemented) PreviewFile(context.Context, PreviewFileRequestObject) (Pr
 	return nil, ErrNotImplemented
 }
 
+func (NotImplemented) ReadDashboardPhoto(context.Context, ReadDashboardPhotoRequestObject) (ReadDashboardPhotoResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 func (NotImplemented) RejectProposal(context.Context, RejectProposalRequestObject) (RejectProposalResponseObject, error) {
 	return nil, ErrNotImplemented
 }

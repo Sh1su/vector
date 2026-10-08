@@ -123,6 +123,25 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"kind":"done","completed_on":"2026-10-02","completed_odometer":{"value":98300,"unit":"km"}}'
 ```
 
+**Fahrt per Tachofoto** (so arbeitet die Android-App):
+
+```bash
+# 1. Foto hochladen (Aufnahmezeit mitschicken)
+FID=$(curl -s -H "Authorization: Bearer $TOKEN" -F capture_source=camera -F captured_at_client=2026-10-02T07:58:00+02:00 \
+  -F file=@tacho.jpg "$VECTRA/api/v1/vehicles/$VID/files" | jq -r .id)
+
+# 2. Auswerten lassen (Claude; nur mit eingerichtetem Assistenten und erteilter Zustimmung, speichert nichts)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "$VECTRA/api/v1/vehicles/$VID/files/$FID/dashboard-reading" \
+  | jq '{odometer, fuel_level_percent, range, outside_temperature_c, confidence, summary, last_odometer}'
+
+# 3. Fahrt mit Foto starten; beim Abschluss analog "end_photo_id" an /trips/{id}/finish
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$VECTRA/api/v1/vehicles/$VID/trips/start" \
+  -d '{"started_at":"2026-10-02T07:58:00+02:00","time_zone":"Europe/Berlin","category_id":"<kategorie>",
+       "start_odometer":{"value":98312,"unit":"km"},"start_photo_id":"'$FID'","note":"Start: Tank 75 %, Reichweite 520 km"}'
+```
+
+Die Fotos hängen als Verknüpfung (`tacho_start`, `tacho_end`) an der Fahrt, bleiben bei Korrekturen erhalten und erscheinen in der Fahrt als `start_photo_id`/`end_photo_id`. Ohne eingerichteten Assistenten antwortet die Auswertung mit `503`; Foto und Fahrt funktionieren trotzdem, der Stand wird dann von Hand eingetragen.
+
 Wiederholbare Anlage: Gibst du im Body eine eigene `id` (UUID) mit, liefert ein erneutes Senden mit gleichem Inhalt `200` statt eines Duplikats.
 
 ## 5. Einbindung

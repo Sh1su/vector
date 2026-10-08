@@ -155,3 +155,28 @@ data class AssistantState(
     val anomalies: Map<String, List<app.vectra.core.model.Anomaly>> = emptyMap(),
     val busyProposal: String? = null,
 )
+
+/** Wofür ein Tachofoto aufgenommen wird: Fahrt starten oder eine laufende Fahrt beenden. */
+sealed interface TachoPurpose {
+    data object Start : TachoPurpose
+    data class Finish(val trip: Trip) : TachoPurpose
+}
+
+enum class TachoPhase { Uploading, Reading, Ready, Manual, Failed }
+
+/**
+ * Tachofoto zur Fahrt: hochladen, auswerten lassen, Werte im Dialog vorbelegen.
+ * [capturedAt] ist der Zeitpunkt der Aufnahme und gilt als Start- bzw. Endzeit der Fahrt.
+ */
+data class TachoCapture(
+    val purpose: TachoPurpose,
+    val capturedAt: java.time.Instant,
+    val preview: ImageBitmap? = null,
+    val phase: TachoPhase = TachoPhase.Uploading,
+    val fileId: String? = null,
+    val reading: app.vectra.core.model.DashboardReading? = null,
+    val message: String? = null,
+) {
+    /** Erkannter Gesamtstand in km (Meilen werden umgerechnet). */
+    val km: Double? get() = reading?.odometer?.let { if (it.unit == "mi") it.value * 1.609344 else it.value }
+}

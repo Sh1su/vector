@@ -185,6 +185,9 @@ data class Trip(
     val status: String = "closed",
     val distance: DisplayValue? = null,
     @SerialName("gap_before") val gapBefore: DisplayValue? = null,
+    val note: String = "",
+    @SerialName("start_photo_id") val startPhotoId: String? = null,
+    @SerialName("end_photo_id") val endPhotoId: String? = null,
 )
 
 @Serializable
@@ -198,6 +201,8 @@ data class TripStart(
     @SerialName("start_location") val startLocation: String? = null,
     @SerialName("confirm_anomalies") val confirmAnomalies: List<String>? = null,
     @SerialName("anomaly_reason") val anomalyReason: String? = null,
+    @SerialName("start_photo_id") val startPhotoId: String? = null,
+    val note: String? = null,
 )
 
 @Serializable
@@ -207,6 +212,27 @@ data class TripFinish(
     @SerialName("end_location") val endLocation: String? = null,
     @SerialName("confirm_anomalies") val confirmAnomalies: List<String>? = null,
     @SerialName("anomaly_reason") val anomalyReason: String? = null,
+    @SerialName("end_photo_id") val endPhotoId: String? = null,
+    val note: String? = null,
+)
+
+/** Aus einem Tachofoto gelesene Werte (Vorschlag; gespeichert wird erst mit der Fahrt). */
+@Serializable
+data class DashboardReading(
+    @SerialName("file_id") val fileId: String,
+    val readable: Boolean = false,
+    val odometer: QuantityInput? = null,
+    @SerialName("trip_meter") val tripMeter: QuantityInput? = null,
+    @SerialName("fuel_level_percent") val fuelLevelPercent: Double? = null,
+    val range: QuantityInput? = null,
+    @SerialName("outside_temperature_c") val outsideTemperatureC: Double? = null,
+    @SerialName("dashboard_time") val dashboardTime: String? = null,
+    @SerialName("warning_lights") val warningLights: List<String> = emptyList(),
+    val confidence: String = "low",
+    val notes: String = "",
+    @SerialName("captured_at") val capturedAt: String? = null,
+    @SerialName("last_odometer") val lastOdometer: QuantityInput? = null,
+    val summary: String = "",
 )
 
 @Serializable

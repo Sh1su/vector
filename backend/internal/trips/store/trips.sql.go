@@ -41,7 +41,7 @@ func (q *Queries) EnsureDefaultCategory(ctx context.Context, arg EnsureDefaultCa
 }
 
 const finishTrip = `-- name: FinishTrip :one
-UPDATE trips.trip SET ended_at = $2, end_reading_id = $3, end_location = $4, status = 'closed', updated_by = $5,
+UPDATE trips.trip SET ended_at = $2, end_reading_id = $3, end_location = $4, note = $7, status = 'closed', updated_by = $5,
     updated_at = now(), version = version + 1
 WHERE id = $1 AND version = $6 AND status = 'open'
 RETURNING id, root_id, vehicle_id, started_at, ended_at, time_zone, start_reading_id, end_reading_id, start_location, end_location, purpose, category_id, driver_account_id, note, status, supersedes_id, change_reason, origin, created_at, created_by, updated_at, updated_by, recorded_at, version
@@ -54,6 +54,7 @@ type FinishTripParams struct {
 	EndLocation  pgtype.Text
 	UpdatedBy    pgtype.UUID
 	Version      int32
+	Note         string
 }
 
 func (q *Queries) FinishTrip(ctx context.Context, arg FinishTripParams) (TripsTrip, error) {
@@ -64,6 +65,7 @@ func (q *Queries) FinishTrip(ctx context.Context, arg FinishTripParams) (TripsTr
 		arg.EndLocation,
 		arg.UpdatedBy,
 		arg.Version,
+		arg.Note,
 	)
 	var i TripsTrip
 	err := row.Scan(
@@ -276,6 +278,32 @@ func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (TripsTr
 	return i, err
 }
 
+const insertTripPhoto = `-- name: InsertTripPhoto :exec
+INSERT INTO documents.attachment (id, vehicle_id, file_id, target_type, target_id, role, created_by)
+VALUES ($1, $2, $3, 'trip', $4, $5, $6)
+`
+
+type InsertTripPhotoParams struct {
+	ID        pgtype.UUID
+	VehicleID pgtype.UUID
+	FileID    pgtype.UUID
+	TargetID  pgtype.UUID
+	Role      string
+	CreatedBy pgtype.UUID
+}
+
+func (q *Queries) InsertTripPhoto(ctx context.Context, arg InsertTripPhotoParams) error {
+	_, err := q.db.Exec(ctx, insertTripPhoto,
+		arg.ID,
+		arg.VehicleID,
+		arg.FileID,
+		arg.TargetID,
+		arg.Role,
+		arg.CreatedBy,
+	)
+	return err
+}
+
 const listCategories = `-- name: ListCategories :many
 SELECT id, vehicle_id, name, kind, purpose_required, active, default_key, created_at, created_by, version FROM trips.category WHERE vehicle_id = $1 ORDER BY default_key IS NULL, array_position(ARRAY['private','business','commute','other']::text[], default_key), name, id
 `
@@ -301,6 +329,39 @@ func (q *Queries) ListCategories(ctx context.Context, vehicleID pgtype.UUID) ([]
 			&i.CreatedBy,
 			&i.Version,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTripPhotos = `-- name: ListTripPhotos :many
+SELECT target_id, role, file_id FROM documents.attachment
+WHERE target_type = 'trip' AND target_id = ANY($1::uuid[]) AND role IN ('tacho_start', 'tacho_end')
+  AND deleted_at IS NULL AND file_id IS NOT NULL
+ORDER BY created_at
+`
+
+type ListTripPhotosRow struct {
+	TargetID pgtype.UUID
+	Role     string
+	FileID   pgtype.UUID
+}
+
+func (q *Queries) ListTripPhotos(ctx context.Context, rootIds []pgtype.UUID) ([]ListTripPhotosRow, error) {
+	rows, err := q.db.Query(ctx, listTripPhotos, rootIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTripPhotosRow
+	for rows.Next() {
+		var i ListTripPhotosRow
+		if err := rows.Scan(&i.TargetID, &i.Role, &i.FileID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -383,6 +444,21 @@ func (q *Queries) ListTrips(ctx context.Context, arg ListTripsParams) ([]TripsTr
 		return nil, err
 	}
 	return items, nil
+}
+
+const replaceTripPhoto = `-- name: ReplaceTripPhoto :exec
+UPDATE documents.attachment SET deleted_at = now()
+WHERE target_type = 'trip' AND target_id = $1 AND role = $2 AND deleted_at IS NULL
+`
+
+type ReplaceTripPhotoParams struct {
+	TargetID pgtype.UUID
+	Role     string
+}
+
+func (q *Queries) ReplaceTripPhoto(ctx context.Context, arg ReplaceTripPhotoParams) error {
+	_, err := q.db.Exec(ctx, replaceTripPhoto, arg.TargetID, arg.Role)
+	return err
 }
 
 const setTripStatus = `-- name: SetTripStatus :one
@@ -485,6 +561,33 @@ func (q *Queries) TripHistory(ctx context.Context, rootID pgtype.UUID) ([]TripsT
 		return nil, err
 	}
 	return items, nil
+}
+
+const tripPhotoFile = `-- name: TripPhotoFile :one
+
+SELECT id, vehicle_id, media_type, derivatives, deleted_at FROM documents.file WHERE id = $1
+`
+
+type TripPhotoFileRow struct {
+	ID          pgtype.UUID
+	VehicleID   pgtype.UUID
+	MediaType   string
+	Derivatives []string
+	DeletedAt   pgtype.Timestamptz
+}
+
+// Tachofotos (Start/Ende) hängen als Verknüpfung an der ersten Fassung (root_id), damit Korrekturen sie behalten.
+func (q *Queries) TripPhotoFile(ctx context.Context, id pgtype.UUID) (TripPhotoFileRow, error) {
+	row := q.db.QueryRow(ctx, tripPhotoFile, id)
+	var i TripPhotoFileRow
+	err := row.Scan(
+		&i.ID,
+		&i.VehicleID,
+		&i.MediaType,
+		&i.Derivatives,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const updateCategory = `-- name: UpdateCategory :one

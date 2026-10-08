@@ -1,6 +1,14 @@
 package app.vectra.android.feature
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -167,18 +175,22 @@ fun AddCostDialog(currency: String, error: FormError?, busy: Boolean, onDismiss:
 /** Fahrt starten: Startstand (vorbelegt mit dem letzten Stand), Kategorie, Zweck. */
 @Composable
 fun StartTripDialog(categories: List<TripCategory>, lastKm: Double?, error: FormError?, busy: Boolean, onDismiss: () -> Unit,
-    onSave: (km: Double, categoryId: String, purpose: String?, from: String?, confirm: Confirmation?) -> Unit) {
+    onSave: (km: Double, categoryId: String, purpose: String?, from: String?, confirm: Confirmation?) -> Unit,
+    tacho: TachoCapture? = null, onRetake: (() -> Unit)? = null) {
     val active = categories.filter { it.active }
-    var km by remember { mutableStateOf(lastKm?.let { Format.number(it, 0).replace(".", "") } ?: "") }
+    var km by remember { mutableStateOf(if (tacho != null) "" else lastKm?.let { Format.number(it, 0).replace(".", "") } ?: "") }
+    TachoPrefill(tacho) { km = it }
     var cat by remember { mutableStateOf(active.firstOrNull()?.id ?: "") }
     var purpose by remember { mutableStateOf("") }
     var from by remember { mutableStateOf("") }
     val parsed = Format.parseNumber(km)
     val needsPurpose = active.firstOrNull { it.id == cat }?.purposeRequired == true
-    FormDialog("Fahrt starten", error, busy, parsed != null && cat.isNotBlank() && (!needsPurpose || purpose.isNotBlank()), onDismiss, { c ->
+    FormDialog("Fahrt starten", error, busy, parsed != null && cat.isNotBlank() && (!needsPurpose || purpose.isNotBlank()) && tacho?.phase != TachoPhase.Uploading, onDismiss, { c ->
         onSave(parsed ?: 0.0, cat, purpose.ifBlank { null }, from.ifBlank { null }, c)
     }) {
-        VField("Startstand", km, { km = it }, VIcons.gauge, keyboardType = KeyboardType.Decimal, trailing = "km")
+        if (tacho != null) TachoPanel(tacho, "Start", onRetake)
+        VField("Startstand", km, { km = it }, VIcons.gauge, keyboardType = KeyboardType.Decimal, trailing = "km",
+            error = tachoWarning(tacho, Format.parseNumber(km)))
         ChoiceRow("Kategorie", active.map { it.id to it.name }, cat) { cat = it }
         VField(if (needsPurpose) "Zweck (Pflicht)" else "Zweck (optional)", purpose, { purpose = it }, VIcons.edit)
         VField("Start (optional)", from, { from = it }, VIcons.route)
@@ -187,18 +199,65 @@ fun StartTripDialog(categories: List<TripCategory>, lastKm: Double?, error: Form
 
 /** Laufende Fahrt beenden: Endstand und Ziel. */
 @Composable
-fun FinishTripDialog(trip: Trip, error: FormError?, busy: Boolean, onDismiss: () -> Unit, onSave: (km: Double, to: String?, confirm: Confirmation?) -> Unit) {
+fun FinishTripDialog(trip: Trip, error: FormError?, busy: Boolean, onDismiss: () -> Unit, onSave: (km: Double, to: String?, confirm: Confirmation?) -> Unit,
+    tacho: TachoCapture? = null, onRetake: (() -> Unit)? = null) {
     var km by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
+    TachoPrefill(tacho) { km = it }
     val parsed = Format.parseNumber(km)
     val dist = parsed?.let { it - trip.startOdometer.value }
-    FormDialog("Fahrt beenden", error, busy, parsed != null, onDismiss, { c -> onSave(parsed ?: 0.0, to.ifBlank { null }, c) }) {
+    FormDialog("Fahrt beenden", error, busy, parsed != null && tacho?.phase != TachoPhase.Uploading, onDismiss, { c -> onSave(parsed ?: 0.0, to.ifBlank { null }, c) }) {
+        if (tacho != null) TachoPanel(tacho, "Ende", onRetake)
         Text("Start bei " + Format.number(trip.startOdometer.value, 0) + " km", style = VType.small, color = V.colors.muted)
         VField("Endstand", km, { km = it }, VIcons.gauge, keyboardType = KeyboardType.Decimal, trailing = "km",
             error = if (dist != null && dist < 0) "Der Endstand liegt unter dem Startstand." else null)
         if (dist != null && dist >= 0) Text(Format.number(dist, 0) + " km Strecke", style = VType.small, color = V.colors.muted)
         VField("Ziel (optional)", to, { to = it }, VIcons.route)
     }
+}
+
+/** Übernimmt den erkannten Stand einmal je Auswertung ins Eingabefeld (danach frei änderbar). */
+@Composable
+private fun TachoPrefill(tacho: TachoCapture?, set: (String) -> Unit) {
+    val km = tacho?.km
+    LaunchedEffect(tacho?.fileId, km) {
+        if (km != null) set(Format.number(km, 0).replace(".", ""))
+    }
+}
+
+/** Hinweis am Eingabefeld, wenn der Stand unter dem letzten bekannten liegt. */
+private fun tachoWarning(tacho: TachoCapture?, value: Double?): String? {
+    val last = tacho?.reading?.lastOdometer ?: return null
+    return if (value != null && value < last.value) "Liegt unter dem letzten bekannten Stand (" + Format.number(last.value, 0) + " km)." else null
+}
+
+/** Tachofoto mit Status der Auswertung und den übrigen erkannten Anzeigen. */
+@Composable
+private fun TachoPanel(t: TachoCapture, label: String, onRetake: (() -> Unit)?) {
+    val c = V.colors
+    val time = java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.systemDefault()).format(t.capturedAt)
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(width = 112.dp, height = 84.dp).clip(RoundedCornerShape(10.dp)).background(c.soft), contentAlignment = Alignment.Center) {
+            val photo = t.preview
+            if (photo != null) Image(photo, "Tachofoto", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Icon(VIcons.camera, null, tint = c.muted, modifier = Modifier.size(28.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("$label um $time (Fotozeit)", style = VType.small, color = c.text)
+            when (t.phase) {
+                TachoPhase.Uploading -> StatusChip("Foto wird hochgeladen …", ChipKind.Info)
+                TachoPhase.Reading -> StatusChip("Tacho wird gelesen …", ChipKind.Info)
+                TachoPhase.Ready -> StatusChip(if (t.reading?.confidence == "high") "Stand erkannt" else "Bitte prüfen", if (t.reading?.confidence == "high") ChipKind.Ok else ChipKind.Warn)
+                TachoPhase.Manual -> StatusChip("Stand von Hand eintragen", ChipKind.Warn)
+                TachoPhase.Failed -> StatusChip("Ohne Foto", ChipKind.Bad)
+            }
+            if (onRetake != null && t.phase != TachoPhase.Uploading) {
+                Text("Neues Foto", style = VType.small, color = c.link, modifier = Modifier.clickable(role = Role.Button, onClick = onRetake))
+            }
+        }
+    }
+    t.reading?.summary?.takeIf { it.isNotBlank() }?.let { Text(it, style = VType.small, color = c.muted) }
+    t.message?.let { Note(if (t.phase == TachoPhase.Failed) NoteKind.Bad else NoteKind.Warn, it) }
 }
 
 /** Nach der Dateiauswahl: Titel und Typ des Dokuments. */

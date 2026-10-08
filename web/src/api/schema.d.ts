@@ -1300,6 +1300,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vehicles/{vehicle_id}/files/{file_id}/dashboard-reading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tachofoto auswerten (Kilometerstand, Tank, Reichweite …)
+         * @description Liest aus einem hochgeladenen Foto des Kombiinstruments den Gesamtkilometerstand und weitere Anzeigen (Claude, gleiche Zustimmung und gleiches Tageslimit wie der Assistent). Speichert nichts; die Werte dienen zum Vorbelegen von Fahrtbeginn/-ende bzw. Kilometerstand und werden vom Nutzer bestätigt.
+         */
+        post: operations["readDashboardPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vehicles/{vehicle_id}/files/{file_id}": {
         parameters: {
             query?: never;
@@ -2854,6 +2874,16 @@ export interface components {
             readonly distance?: components["schemas"]["DisplayValue"] | null;
             /** @description TR-04 */
             readonly gap_before?: components["schemas"]["DisplayValue"] | null;
+            /**
+             * Format: uuid
+             * @description Tachofoto zum Start (Datei-ID, Verknüpfung mit Rolle tacho_start)
+             */
+            readonly start_photo_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Tachofoto zum Ende (Datei-ID, Rolle tacho_end)
+             */
+            readonly end_photo_id?: string | null;
         };
         TripCreate: {
             /** Format: uuid */
@@ -2873,6 +2903,16 @@ export interface components {
             /** Format: uuid */
             driver_account_id?: string | null;
             note?: string;
+            /**
+             * Format: uuid
+             * @description Hochgeladenes Tachofoto zum Start (uploadFile)
+             */
+            start_photo_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Hochgeladenes Tachofoto zum Ende
+             */
+            end_photo_id?: string | null;
         } & components["schemas"]["AnomalyConfirmation"];
         TripStart: {
             /** Format: uuid */
@@ -2887,12 +2927,26 @@ export interface components {
             category_id: string;
             /** Format: uuid */
             driver_account_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Hochgeladenes Tachofoto zum Start (uploadFile)
+             */
+            start_photo_id?: string | null;
+            /** @description z. B. Tankstand und Reichweite aus dem Tachofoto */
+            note?: string;
         } & components["schemas"]["AnomalyConfirmation"];
         TripFinish: {
             /** Format: date-time */
             ended_at: string;
             end_odometer: components["schemas"]["QuantityInput"];
             end_location?: string | null;
+            /**
+             * Format: uuid
+             * @description Hochgeladenes Tachofoto zum Ende (uploadFile)
+             */
+            end_photo_id?: string | null;
+            /** @description ersetzt die Notiz der Fahrt (z. B. um Angaben vom Endfoto ergänzt) */
+            note?: string;
         } & components["schemas"]["AnomalyConfirmation"];
         TripOpenPatch: {
             /** Format: date-time */
@@ -3460,6 +3514,36 @@ export interface components {
             /** @enum {string} */
             kind: "thumbnail" | "preview" | "sanitized";
             media_type: string;
+        };
+        /** @description Aus einem Tachofoto gelesene Werte (Vorschlag, nicht gespeichert) */
+        DashboardReading: {
+            /** Format: uuid */
+            file_id: string;
+            /** @description false, wenn kein Kombiinstrument erkennbar ist */
+            readable: boolean;
+            /** @description Gesamtkilometerstand zum Vorbelegen */
+            odometer: components["schemas"]["QuantityInput"] | null;
+            trip_meter?: components["schemas"]["QuantityInput"] | null;
+            /** Format: double */
+            fuel_level_percent?: number | null;
+            range?: components["schemas"]["QuantityInput"] | null;
+            /** Format: double */
+            outside_temperature_c?: number | null;
+            /** @description angezeigte Uhrzeit HH:MM */
+            dashboard_time?: string | null;
+            warning_lights: string[];
+            /** @enum {string} */
+            confidence: "high" | "medium" | "low";
+            notes: string;
+            /**
+             * Format: date-time
+             * @description Aufnahmezeit laut App, sonst Eingang beim Server
+             */
+            captured_at: string;
+            /** @description letzter bekannter Stand vor captured_at (Plausibilität) */
+            last_odometer?: components["schemas"]["QuantityInput"] | null;
+            /** @description Kurzfassung für die Notiz, z. B. „Tank 75 %, Reichweite 520 km, 18 °C“ */
+            summary: string;
         };
         /** @description ADR-017/018; unveränderlich */
         FileMeta: {
@@ -7610,6 +7694,53 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    readDashboardPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: components["parameters"]["VehicleId"];
+                file_id: components["parameters"]["FileId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Erfolg */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardReading"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description KI-Anbieter nicht erreichbar oder Foto nicht auswertbar */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Bilderkennung nicht eingerichtet (kein KI-Anbieter konfiguriert) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     getFile: {

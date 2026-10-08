@@ -5,6 +5,7 @@ import app.vectra.core.model.AssistantConsent
 import app.vectra.core.model.AssistantMessage
 import app.vectra.core.model.AssistantStatus
 import app.vectra.core.model.Conversation
+import app.vectra.core.model.DashboardReading
 import app.vectra.core.model.Proposal
 import app.vectra.core.model.ProposalConfirm
 import app.vectra.core.model.StatusText
@@ -224,12 +225,12 @@ class ApiClient(
         call("POST", "/vehicles/$vehicleId/images", VehicleImage.serializer(), encode(VehicleImageCreate(fileId, primary = true)))
 
     /** Datei hochladen (multipart, Felder vor der Datei). Bei Dublette liefert der Server die vorhandene Datei (DO-02). */
-    suspend fun upload(vehicleId: String, name: String, mediaType: String?, bytes: ByteArray, captureSource: String = "gallery"): FileMeta =
+    suspend fun upload(vehicleId: String, name: String, mediaType: String?, bytes: ByteArray, captureSource: String = "gallery", capturedAt: Instant? = null): FileMeta =
         withContext(Dispatchers.IO) {
-            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            val form = MultipartBody.Builder().setType(MultipartBody.FORM)
                 .addFormDataPart("capture_source", captureSource)
-                .addFormDataPart("file", name, bytes.toRequestBody(mediaType?.toMediaTypeOrNull()))
-                .build()
+            capturedAt?.let { form.addFormDataPart("captured_at_client", it.toString()) }
+            val body = form.addFormDataPart("file", name, bytes.toRequestBody(mediaType?.toMediaTypeOrNull())).build()
             val b = Request.Builder().url((apiBase.toString().trimEnd('/') + "/vehicles/$vehicleId/files").toHttpUrl())
                 .header("Accept", "application/json, application/problem+json").post(body)
             cookies.value(SessionCookieJar.CSRF_COOKIE)?.let { b.header("X-CSRF-Token", it) }
@@ -239,6 +240,10 @@ class ApiClient(
                 VectraJson.decodeFromString(FileMeta.serializer(), text)
             }
         }
+
+    /** Tachofoto auswerten lassen (Kilometerstand, Tank, Reichweite); speichert nichts. */
+    suspend fun readDashboard(vehicleId: String, fileId: String): DashboardReading =
+        call("POST", "/vehicles/$vehicleId/files/$fileId/dashboard-reading", DashboardReading.serializer())
 
     /** Vorschaubild (JPEG ohne EXIF) als Bytes; null, wenn es keines gibt. */
     suspend fun preview(vehicleId: String, fileId: String, size: String = "thumbnail"): ByteArray? =

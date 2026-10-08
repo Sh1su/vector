@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kamera-App schreibt Tachofotos hierhin (FileProvider); die App lädt sie hoch und löscht sie danach. -->
+<paths>
+    <cache-path name="tacho" path="tacho/" />
+</paths>

@@ -143,6 +143,7 @@ var Security = map[string]OpSecurity{
 	"login":                      {Scope: "", Bearer: false},
 	"logout":                     {Scope: "", Bearer: false},
 	"previewFile":                {Scope: "vehicles:read", Bearer: true},
+	"readDashboardPhoto":         {Scope: "entries:write", Bearer: true},
 	"rejectProposal":             {Scope: "", Bearer: true},
 	"removeMember":               {Scope: "vehicles:read", Bearer: true},
 	"removeVehicleImage":         {Scope: "entries:write", Bearer: true},

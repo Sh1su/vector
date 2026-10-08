@@ -25,6 +25,11 @@ import app.vectra.android.feature.MaintenanceScreen
 import app.vectra.android.feature.MaintenanceState
 import app.vectra.android.feature.ServiceScreen
 import app.vectra.android.feature.StartTripDialog
+import app.vectra.android.feature.FinishTripDialog
+import app.vectra.android.feature.TachoCapture
+import app.vectra.android.feature.TachoPhase
+import app.vectra.android.feature.TachoPurpose
+import app.vectra.core.model.DashboardReading
 import app.vectra.android.feature.TripsScreen
 import app.vectra.android.feature.TripsState
 import app.vectra.android.feature.HomeState
@@ -125,7 +130,7 @@ private val tripList = listOf(
     Trip("t2", 1, "2026-09-02T10:00:00Z", "2026-09-02T10:30:00Z", "Europe/Berlin", QuantityInput(143400.0, "km"), QuantityInput(143420.0, "km"), "Büro", "Zuhause",
         categoryId = "c3", distance = DisplayValue(20.0, "km"), gapBefore = DisplayValue(62.0, "km")),
     Trip("t1", 1, "2026-09-01T06:00:00Z", "2026-09-01T06:45:00Z", "Europe/Berlin", QuantityInput(143300.0, "km"), QuantityInput(143338.0, "km"), "Berlin", "Potsdam",
-        "Kunde Müller", "c2", distance = DisplayValue(38.0, "km")),
+        "Kunde Müller", "c2", distance = DisplayValue(38.0, "km"), startPhotoId = "f1", endPhotoId = "f2"),
 )
 
 @Composable
@@ -165,8 +170,16 @@ fun main(args: Array<String>) {
             listOf(CostOccurrence("p1", "2026-04-15", "open", eur(18000), "Kfz-Steuer")), 0,
             listOf(CostEntry("e1", "insurance", "Versicherung 2026", "2026-01-02", eur(60000))), loading = false), {}, {}, {}) } },
         "trips" to { Phone(Tab.Trips) { TripsScreen(TripsState(golf, tripList, cats, TripReport("2026-09-01", "2026-09-30", DisplayValue(58.0, "km"),
-            listOf(DistanceShare("c2", "Geschäftlich", DisplayValue(38.0, "km"), 1, 65.5), DistanceShare("c3", "Arbeitsweg", DisplayValue(20.0, "km"), 1, 34.5))), "September", loading = false), {}, {}, {}) } },
+            listOf(DistanceShare("c2", "Geschäftlich", DisplayValue(38.0, "km"), 1, 65.5), DistanceShare("c3", "Arbeitsweg", DisplayValue(20.0, "km"), 1, 34.5))), "September", loading = false), {}, {}, {}, {}, {}) } },
+        "trips-open" to { Phone(Tab.Trips) { TripsScreen(TripsState(golf, listOf(Trip("t3", 1, "2026-09-21T05:58:00Z", null, "Europe/Berlin", QuantityInput(143612.0, "km"),
+            categoryId = "c2", status = "open", startPhotoId = "f1")) + tripList, cats, null, "September", loading = false), {}, {}, {}, {}, {}) } },
         "trip-start" to { StartTripDialog(cats, 143_520.0, null, false, {}, { _, _, _, _, _ -> }) },
+        "trip-start-tacho" to { StartTripDialog(cats, 143_520.0, null, false, {}, { _, _, _, _, _ -> }, tacho = TachoCapture(TachoPurpose.Start,
+            java.time.Instant.parse("2026-09-21T05:58:00Z"), phase = TachoPhase.Ready, fileId = "f1", reading = DashboardReading("f1", true, QuantityInput(143_612.0, "km"),
+                fuelLevelPercent = 75.0, confidence = "medium", notes = "Letzte Ziffer unscharf.", lastOdometer = QuantityInput(143_520.0, "km"),
+                summary = "Tank 75 %, Reichweite 520 km, 18,5 °C"), message = "Bitte die Ziffern mit dem Foto vergleichen. Letzte Ziffer unscharf."), onRetake = {}) },
+        "trip-finish-tacho" to { FinishTripDialog(tripList.first(), null, false, {}, { _, _, _ -> }, tacho = TachoCapture(TachoPurpose.Finish(tripList.first()),
+            java.time.Instant.parse("2026-09-21T07:10:00Z"), phase = TachoPhase.Reading, fileId = "f2"), onRetake = {}) },
         "documents" to { Phone(Tab.More) { DocumentsScreen(DocumentsState(golf, listOf(DocumentMeta("d1", 1, "invoice", "record", "Rechnung Inspektion März", "2026-03-10", "Autohaus Muster", listOf("f1")),
             DocumentMeta("d2", 1, "registration", "other", "Zulassungsbescheinigung Teil I", null, null, listOf("f2", "f3"))), loading = false), {}, {}) } },
         "settings" to { Phone(Tab.More) { SettingsScreen(SettingsState("https://vectra.example.org", "Sam Beispiel", "sam@example.org", pendingCount = 2, clockSkewMinutes = 3, version = "0.1.0"), {}, {}, {}, {}) } },

@@ -10,6 +10,7 @@ import { browserTimeZone, fmtDate, fmtNumber, localInputValue } from '../lib/for
 import { errorText, etagOf, parseNumber } from '../lib/money'
 import { useCurrent } from '../lib/odometer'
 import { useApp } from '../lib/state'
+import { fileUrl } from '../lib/files'
 
 type Trip = Schemas['Trip'] & { version: number; status: string; root_id: string }
 type Category = Schemas['TripCategory'] & { id: string; version: number }
@@ -78,6 +79,16 @@ export function TripsPage() {
                     </div>
                     <div className="tabular text-[15px] font-semibold">{t.distance ? `${fmtNumber(t.distance.value, 1)} ${t.distance.unit}` : '–'}</div>
                   </button>
+                  {vid && (t.start_photo_id || t.end_photo_id) && (
+                    <div className="flex gap-4 px-5 pb-3 pl-[72px] text-xs text-muted">
+                      {([['Start', t.start_photo_id], ['Ende', t.end_photo_id]] as const).map(([label, fid]) => fid && (
+                        <a key={label} href={fileUrl(vid, fid)} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-link">
+                          <img src={fileUrl(vid, fid, 'thumbnail')} alt={`Tachofoto ${label}`} className="h-10 w-14 rounded-md border border-line object-cover" loading="lazy" />
+                          Tacho {label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })}

@@ -61,7 +61,8 @@ func (s *Server) CreateTrip(ctx context.Context, req api.CreateTripRequestObject
 		return nil, problem.Validation(problem.FieldError{Pointer: "/ended_at", Code: "required", Message: "Nachträglich erfasste Fahrten brauchen Ende und Endstand."})
 	}
 	conf := trips.Confirmation{Codes: confirmList(req.Body.ConfirmAnomalies), Reason: str(req.Body.AnomalyReason)}
-	v, created, err := s.d.Trips.Record(ctx, a, uuid.UUID(req.VehicleId), (*uuid.UUID)(req.Body.Id), in, conf)
+	photos := trips.Photos{Start: nullUUID(req.Body.StartPhotoId), End: nullUUID(req.Body.EndPhotoId)}
+	v, created, err := s.d.Trips.Record(ctx, a, uuid.UUID(req.VehicleId), (*uuid.UUID)(req.Body.Id), in, photos, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (s *Server) StartTrip(ctx context.Context, req api.StartTripRequestObject) 
 	}
 	in.EndedAt, in.EndOdometer, in.EndLocation = nil, nil, nil
 	conf := trips.Confirmation{Codes: confirmList(req.Body.ConfirmAnomalies), Reason: str(req.Body.AnomalyReason)}
-	v, _, err := s.d.Trips.Record(ctx, a, uuid.UUID(req.VehicleId), (*uuid.UUID)(req.Body.Id), in, conf)
+	v, _, err := s.d.Trips.Record(ctx, a, uuid.UUID(req.VehicleId), (*uuid.UUID)(req.Body.Id), in, trips.Photos{Start: nullUUID(req.Body.StartPhotoId)}, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +143,7 @@ func (s *Server) FinishTrip(ctx context.Context, req api.FinishTripRequestObject
 		l := b.EndLocation.MustGet()
 		endLoc = &l
 	}
-	v, err := s.d.Trips.Finish(ctx, a, uuid.UUID(req.VehicleId), uuid.UUID(req.TripId), req.Params.IfMatch, b.EndedAt, end, endLoc,
+	v, err := s.d.Trips.Finish(ctx, a, uuid.UUID(req.VehicleId), uuid.UUID(req.TripId), req.Params.IfMatch, b.EndedAt, end, endLoc, trips.FinishExtra{Photo: nullUUID(b.EndPhotoId), Note: b.Note},
 		trips.Confirmation{Codes: confirmList(b.ConfirmAnomalies), Reason: str(b.AnomalyReason)})
 	if err != nil {
 		return nil, err

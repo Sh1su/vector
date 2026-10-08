@@ -68,6 +68,30 @@ class ApiClientTest {
     }
 
     @Test
+    fun `Tachofoto hochladen, auswerten und Fahrt mit Foto starten`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201).setBody(
+            """{"id":"f1","original_name":"tacho.jpg","media_type":"image/jpeg","size_bytes":3,"received_at":"2026-09-21T06:00:00Z"}"""))
+        server.enqueue(MockResponse().setBody(
+            """{"file_id":"f1","readable":true,"odometer":{"value":98312,"unit":"km"},"fuel_level_percent":75,"warning_lights":[],
+               "confidence":"high","notes":"","captured_at":"2026-09-21T05:58:00Z","last_odometer":{"value":98000,"unit":"km"},
+               "summary":"Tank 75 %","unknown_field":1}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody(
+            """{"id":"t1","version":1,"started_at":"2026-09-21T05:58:00Z","time_zone":"Europe/Berlin","start_odometer":{"value":98312,"unit":"km"},
+               "category_id":"c","status":"open","start_photo_id":"f1"}"""))
+        val meta = api.upload("v", "tacho.jpg", "image/jpeg", byteArrayOf(1, 2, 3), "camera", java.time.Instant.parse("2026-09-21T05:58:00Z"))
+        val up = server.takeRequest().body.readUtf8()
+        assertTrue(up.contains("captured_at_client") && up.contains("2026-09-21T05:58:00Z") && up.contains("camera"))
+        val r = api.readDashboard("v", meta.id)
+        assertEquals("/api/v1/vehicles/v/files/f1/dashboard-reading", server.takeRequest().path)
+        assertEquals(98312.0, r.odometer?.value)
+        assertEquals(75.0, r.fuelLevelPercent)
+        val t = api.startTrip("v", app.vectra.core.model.TripStart("t1", r.capturedAt!!, "Europe/Berlin", r.odometer!!, "c", startPhotoId = meta.id, note = "Start: " + r.summary))
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"start_photo_id\":\"f1\"") && body.contains("Start: Tank 75 %"))
+        assertEquals("f1", t.startPhotoId)
+    }
+
+    @Test
     fun `Uhrabweichung aus dem Date-Header`() = runTest {
         server.enqueue(MockResponse().setBody("{}").setHeader("Date", "Mon, 01 Jan 2024 00:00:00 GMT"))
         api.raw("GET", "/health")

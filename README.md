@@ -16,6 +16,7 @@ Kilometerstand, Tanken und Laden, Öl, Wartung und ein optionaler KI-Assistent. 
 | **Öl** | Messung, Nachfüllung, Ölwechsel; Verbrauch je Messreihe und Nachfüllrate (ml bzw. l je 1.000 km) |
 | **Wartung & Service** | Intervalle nach Zeit und/oder km, Stufen „demnächst / fällig / überfällig“, **Wartungsbücher** zum Übernehmen (u. a. Mercedes-Benz Sprinter und Vito CDI, Reisemobil-Aufbau, Hyundai Tucson, Leapmotor B10), Servicehistorie mit Teilen und Arbeitslohn |
 | **Fahrten, Kosten, Dokumente** | Fahrtenbuch mit Kategorien, Kostenbuch mit wiederkehrenden Kosten und Auswertung, Fahrzeugakte mit Belegen, Fotos und Anhängen |
+| **Fahrt per Tachofoto** | In der Android-App zum Start und Ende der Fahrt den Tacho fotografieren: Kilometerstand, Uhrzeit, Tank, Reichweite und Außentemperatur werden erkannt und vorbelegt; die Fotos hängen an der Fahrt (Erkennung mit dem optionalen Assistenten) |
 | **Assistent (optional)** | Fragen in natürlicher Sprache, Einträge per Satz vorbereiten („bei 143.520 km 0,7 l Öl nachgefüllt“); speichert nie selbst, jeder Vorschlag wird bestätigt. Mit Claude (Anthropic); dazu ein MCP-Server für Claude Desktop/Claude Code |
 | **Teilen & Rechte** | Rollen je Fahrzeug (Eigentümer, Bearbeiter, Leser), vollständige Änderungshistorie |
 | **API** | REST-API (OpenAPI 3.1) mit persönlichen API-Tokens – z. B. für Home Assistant, Grafana oder eigene Skripte |

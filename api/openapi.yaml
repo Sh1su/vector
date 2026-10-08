@@ -4274,6 +4274,55 @@ paths:
       x-vectra-role: editor
       x-vectra-scope: entries:write
       x-vectra-max-body: 25MB (konfigurierbar)
+  /vehicles/{vehicle_id}/files/{file_id}/dashboard-reading:
+    post:
+      operationId: readDashboardPhoto
+      summary: Tachofoto auswerten (Kilometerstand, Tank, Reichweite …)
+      description: >-
+        Liest aus einem hochgeladenen Foto des Kombiinstruments den Gesamtkilometerstand und weitere Anzeigen
+        (Claude, gleiche Zustimmung und gleiches Tageslimit wie der Assistent). Speichert nichts; die Werte
+        dienen zum Vorbelegen von Fahrtbeginn/-ende bzw. Kilometerstand und werden vom Nutzer bestätigt.
+      tags:
+      - Trips
+      parameters:
+      - $ref: '#/components/parameters/VehicleId'
+      - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardReading'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '502':
+          description: KI-Anbieter nicht erreichbar oder Foto nicht auswertbar
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Bilderkennung nicht eingerichtet (kein KI-Anbieter konfiguriert)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security:
+      - sessionCookie: []
+      - bearerToken: []
+      x-vectra-role: editor
+      x-vectra-scope: entries:write
   /vehicles/{vehicle_id}/files/{file_id}:
     get:
       operationId: getFile
@@ -8955,6 +9004,20 @@ components:
             - type: 'null'
             readOnly: true
             description: TR-04
+          start_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            readOnly: true
+            description: Tachofoto zum Start (Datei-ID, Verknüpfung mit Rolle tacho_start)
+          end_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            readOnly: true
+            description: Tachofoto zum Ende (Datei-ID, Rolle tacho_end)
         required:
         - started_at
         - time_zone
@@ -9009,6 +9072,18 @@ components:
           note:
             type: string
             maxLength: 10000
+          start_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            description: Hochgeladenes Tachofoto zum Start (uploadFile)
+          end_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            description: Hochgeladenes Tachofoto zum Ende
         required:
         - started_at
         - ended_at
@@ -9049,6 +9124,16 @@ components:
             - string
             - 'null'
             format: uuid
+          start_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            description: Hochgeladenes Tachofoto zum Start (uploadFile)
+          note:
+            type: string
+            maxLength: 10000
+            description: z. B. Tankstand und Reichweite aus dem Tachofoto
         required:
         - started_at
         - time_zone
@@ -9069,6 +9154,16 @@ components:
             - string
             - 'null'
             maxLength: 200
+          end_photo_id:
+            type:
+            - string
+            - 'null'
+            format: uuid
+            description: Hochgeladenes Tachofoto zum Ende (uploadFile)
+          note:
+            type: string
+            maxLength: 10000
+            description: ersetzt die Notiz der Fahrt (z. B. um Angaben vom Endfoto ergänzt)
         required:
         - ended_at
         - end_odometer
@@ -10670,6 +10765,77 @@ components:
       required:
       - kind
       - media_type
+    DashboardReading:
+      type: object
+      description: Aus einem Tachofoto gelesene Werte (Vorschlag, nicht gespeichert)
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        readable:
+          type: boolean
+          description: false, wenn kein Kombiinstrument erkennbar ist
+        odometer:
+          description: Gesamtkilometerstand zum Vorbelegen
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        trip_meter:
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        fuel_level_percent:
+          type:
+          - number
+          - 'null'
+          format: double
+        range:
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        outside_temperature_c:
+          type:
+          - number
+          - 'null'
+          format: double
+        dashboard_time:
+          type:
+          - string
+          - 'null'
+          description: angezeigte Uhrzeit HH:MM
+        warning_lights:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: string
+          enum:
+          - high
+          - medium
+          - low
+        notes:
+          type: string
+        captured_at:
+          type: string
+          format: date-time
+          description: Aufnahmezeit laut App, sonst Eingang beim Server
+        last_odometer:
+          description: letzter bekannter Stand vor captured_at (Plausibilität)
+          oneOf:
+          - $ref: '#/components/schemas/QuantityInput'
+          - type: 'null'
+        summary:
+          type: string
+          description: Kurzfassung für die Notiz, z. B. „Tank 75 %, Reichweite 520 km, 18 °C“
+      required:
+      - file_id
+      - readable
+      - odometer
+      - confidence
+      - notes
+      - captured_at
+      - warning_lights
+      - summary
     FileMeta:
       type: object
       properties:

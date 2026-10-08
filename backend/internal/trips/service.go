@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sh1su/vector/backend/internal/identity"
@@ -75,7 +76,51 @@ type View struct {
 	ChangeReason *string              `json:"change_reason"`
 	Distance     *kernel.DisplayValue `json:"distance"`
 	GapBefore    *kernel.DisplayValue `json:"gap_before"`
+	StartPhotoID *uuid.UUID           `json:"start_photo_id"`
+	EndPhotoID   *uuid.UUID           `json:"end_photo_id"`
 	distance     *int64               // kanonisch, für Auswertungen
+}
+
+// Photos sind Tachofotos (hochgeladene Dateien) zu Start und Ende einer Fahrt.
+type Photos struct {
+	Start *uuid.UUID
+	End   *uuid.UUID
+}
+
+// FinishExtra sind optionale Angaben beim Abschluss: Tachofoto und neue Notiz.
+type FinishExtra struct {
+	Photo *uuid.UUID
+	Note  *string
+}
+
+// Rollen der Tachofotos als Verknüpfung (documents.attachment).
+const (
+	RolePhotoStart = "tacho_start"
+	RolePhotoEnd   = "tacho_end"
+)
+
+// attachPhoto verknüpft ein Tachofoto mit der Fahrt (root_id); ein vorhandenes
+// Foto derselben Rolle wird ersetzt. Die Datei muss ein Bild desselben Fahrzeugs sein (I-DO-1).
+func attachPhoto(ctx context.Context, tx pgx.Tx, actor kernel.Actor, vehicleID, root uuid.UUID, fileID *uuid.UUID, role, pointer string) error {
+	if fileID == nil {
+		return nil
+	}
+	q := store.New(tx)
+	f, err := q.TripPhotoFile(ctx, pg.U(*fileID))
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (pg.ID(f.VehicleID) != vehicleID || f.DeletedAt.Valid)) {
+		return problem.Validation(problem.FieldError{Pointer: pointer, Code: "not_found", Message: "Foto gehört nicht zu diesem Fahrzeug (I-DO-1)."})
+	}
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(f.MediaType, "image/") {
+		return problem.Validation(problem.FieldError{Pointer: pointer, Code: "not_image", Message: "Das Tachofoto muss ein Bild sein."})
+	}
+	if err := q.ReplaceTripPhoto(ctx, store.ReplaceTripPhotoParams{TargetID: pg.U(root), Role: role}); err != nil {
+		return err
+	}
+	return q.InsertTripPhoto(ctx, store.InsertTripPhotoParams{ID: pg.U(kernel.NewID()), VehicleID: pg.U(vehicleID), FileID: pg.U(*fileID),
+		TargetID: pg.U(root), Role: role, CreatedBy: pg.U(actor.AccountID)})
 }
 
 // Confirmation sind bestätigte Plausibilitätsbefunde (ADR-010).
@@ -366,7 +411,7 @@ func (s *Service) insert(ctx context.Context, tx pgx.Tx, actor kernel.Actor, veh
 
 // Record erfasst eine abgeschlossene Fahrt nachträglich (RecordTrip) oder startet
 // eine laufende (StartTrip, ohne Ende).
-func (s *Service) Record(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, id *uuid.UUID, in Input, conf Confirmation) (View, bool, error) {
+func (s *Service) Record(ctx context.Context, actor kernel.Actor, vehicleID uuid.UUID, id *uuid.UUID, in Input, photos Photos, conf Confirmation) (View, bool, error) {
 	var out View
 	created := true
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -422,6 +467,15 @@ func (s *Service) Record(ctx context.Context, actor kernel.Actor, vehicleID uuid
 			}
 			return err
 		}
+		if err := attachPhoto(ctx, tx, actor, vehicleID, tid, photos.Start, RolePhotoStart, "/start_photo_id"); err != nil {
+			return err
+		}
+		if photos.End != nil && status != StatusClosed {
+			return problem.Validation(problem.FieldError{Pointer: "/end_photo_id", Code: "not_finished", Message: "Das Endfoto gehört zum Abschluss der Fahrt."})
+		}
+		if err := attachPhoto(ctx, tx, actor, vehicleID, tid, photos.End, RolePhotoEnd, "/end_photo_id"); err != nil {
+			return err
+		}
 		action := "trip.started"
 		if status == StatusClosed {
 			action = "trip.recorded"
@@ -450,7 +504,7 @@ func load(ctx context.Context, db store.DBTX, actor kernel.Actor, vehicleID, id 
 
 // Finish schließt eine laufende Fahrt ab (FinishTrip).
 func (s *Service) Finish(ctx context.Context, actor kernel.Actor, vehicleID, id uuid.UUID, ifMatch string, endedAt time.Time, end vehicles.Q,
-	endLocation *string, conf Confirmation) (View, error) {
+	endLocation *string, extra FinishExtra, conf Confirmation) (View, error) {
 	version, err := vehicles.ParseETag(ifMatch)
 	if err != nil {
 		return View{}, err
@@ -476,6 +530,12 @@ func (s *Service) Finish(ctx context.Context, actor kernel.Actor, vehicleID, id 
 			return err
 		}
 		in.EndedAt, in.EndOdometer, in.EndLocation = &endedAt, &end, endLocation
+		if extra.Note != nil {
+			if len([]rune(*extra.Note)) > 10000 {
+				return problem.Validation(problem.FieldError{Pointer: "/note", Code: "length"})
+			}
+			in.Note = *extra.Note
+		}
 		root := pg.ID(t.RootID)
 		if err := s.check(ctx, tx, actor, vehicleID, &in, &root, false); err != nil {
 			return err
@@ -491,11 +551,14 @@ func (s *Service) Finish(ctx context.Context, actor kernel.Actor, vehicleID, id 
 			return err
 		}
 		row, err := store.New(tx).FinishTrip(ctx, store.FinishTripParams{ID: t.ID, EndedAt: pg.TS(endedAt), EndReadingID: pg.U(ids[0]),
-			EndLocation: pg.T(in.EndLocation), UpdatedBy: pg.U(actor.AccountID), Version: t.Version})
+			EndLocation: pg.T(in.EndLocation), Note: in.Note, UpdatedBy: pg.U(actor.AccountID), Version: t.Version})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return problem.PreconditionFailed(nil)
 		}
 		if err != nil {
+			return err
+		}
+		if err := attachPhoto(ctx, tx, actor, vehicleID, root, extra.Photo, RolePhotoEnd, "/end_photo_id"); err != nil {
 			return err
 		}
 		if out, err = s.one(ctx, tx, actor, row); err != nil {
@@ -846,6 +909,27 @@ func (s *Service) views(ctx context.Context, db store.DBTX, actor kernel.Actor, 
 	if err != nil {
 		return nil, err
 	}
+	roots := []pgtype.UUID{}
+	for _, t := range rows {
+		roots = append(roots, t.RootID)
+	}
+	photoRows, err := store.New(db).ListTripPhotos(ctx, roots)
+	if err != nil {
+		return nil, err
+	}
+	photos := map[uuid.UUID]*Photos{}
+	for _, p := range photoRows {
+		r := pg.ID(p.TargetID)
+		if photos[r] == nil {
+			photos[r] = &Photos{}
+		}
+		f := pg.ID(p.FileID)
+		if p.Role == RolePhotoStart {
+			photos[r].Start = &f
+		} else {
+			photos[r].End = &f
+		}
+	}
 	unit := s.Unit(ctx, actor, meta.UsageMeter)
 	disp := func(v int64) *kernel.DisplayValue {
 		f, _ := kernel.FromCanonical(v, unit)
@@ -882,6 +966,9 @@ func (s *Service) views(ctx context.Context, db store.DBTX, actor kernel.Actor, 
 		}
 		if g, ok := gaps[pg.ID(t.ID)]; ok && (t.Status == StatusOpen || t.Status == StatusClosed) {
 			v.GapBefore = disp(g)
+		}
+		if p := photos[v.RootID]; p != nil {
+			v.StartPhotoID, v.EndPhotoID = p.Start, p.End
 		}
 		out = append(out, v)
 	}

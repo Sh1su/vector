@@ -35,7 +35,7 @@ WHERE id = $1 AND version = $10 AND status = 'open'
 RETURNING *;
 
 -- name: FinishTrip :one
-UPDATE trips.trip SET ended_at = $2, end_reading_id = $3, end_location = $4, status = 'closed', updated_by = $5,
+UPDATE trips.trip SET ended_at = $2, end_reading_id = $3, end_location = $4, note = sqlc.arg(note), status = 'closed', updated_by = $5,
     updated_at = now(), version = version + 1
 WHERE id = $1 AND version = $6 AND status = 'open'
 RETURNING *;
@@ -61,3 +61,22 @@ LIMIT sqlc.arg(lim);
 
 -- name: TripHistory :many
 SELECT * FROM trips.trip WHERE root_id = $1 ORDER BY created_at, id;
+
+-- Tachofotos (Start/Ende) hängen als Verknüpfung an der ersten Fassung (root_id), damit Korrekturen sie behalten.
+
+-- name: TripPhotoFile :one
+SELECT id, vehicle_id, media_type, derivatives, deleted_at FROM documents.file WHERE id = $1;
+
+-- name: ReplaceTripPhoto :exec
+UPDATE documents.attachment SET deleted_at = now()
+WHERE target_type = 'trip' AND target_id = $1 AND role = $2 AND deleted_at IS NULL;
+
+-- name: InsertTripPhoto :exec
+INSERT INTO documents.attachment (id, vehicle_id, file_id, target_type, target_id, role, created_by)
+VALUES ($1, $2, $3, 'trip', $4, $5, $6);
+
+-- name: ListTripPhotos :many
+SELECT target_id, role, file_id FROM documents.attachment
+WHERE target_type = 'trip' AND target_id = ANY(sqlc.arg(root_ids)::uuid[]) AND role IN ('tacho_start', 'tacho_end')
+  AND deleted_at IS NULL AND file_id IS NOT NULL
+ORDER BY created_at;

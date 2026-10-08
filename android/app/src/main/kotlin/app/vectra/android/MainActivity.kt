@@ -25,6 +25,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import app.vectra.android.data.TachoImage
+import app.vectra.android.feature.TachoPurpose
+import java.io.File
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import app.vectra.android.ui.Note
@@ -106,6 +113,23 @@ private fun AppRoot(vm: MainViewModel) {
         uri?.let { readPicked(context, it) }?.let(vm::onPicked)
     }
     fun pickDocument() { vm.pickPurpose = PickPurpose.Document; picker.launch("*/*") }
+    // Tachofoto über die Kamera-App; der Pfad überlebt eine Neuerstellung der Activity.
+    var tachoPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        vm.onTachoFile(ok, tachoPath?.let(::File))
+        tachoPath = null
+    }
+    fun takeTacho(purpose: TachoPurpose) {
+        val (file, uri) = TachoImage.newTarget(context)
+        vm.pendingTacho = purpose
+        tachoPath = file.path
+        try {
+            camera.launch(uri)
+        } catch (e: ActivityNotFoundException) {
+            vm.pendingTacho = null
+            vm.notice.value = "Auf diesem Gerät ist keine Kamera-App verfügbar."
+        }
+    }
     // Spracherkennung des Systems (offline je nach Gerät); das Ergebnis landet im Eingabefeld des Assistenten.
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::onDictated)
@@ -163,7 +187,8 @@ private fun AppRoot(vm: MainViewModel) {
                     }
                     Tab.Trips -> {
                         val s by vm.trips.collectAsStateWithLifecycle()
-                        TripsScreen(s, onStart = { vm.openDialog(DialogState.StartTrip) }, onFinish = { vm.openDialog(DialogState.FinishTrip(it)) }, onRefresh = vm::syncNow)
+                        TripsScreen(s, onStart = { vm.openDialog(DialogState.StartTrip) }, onFinish = { vm.openDialog(DialogState.FinishTrip(it)) }, onRefresh = vm::syncNow,
+                            onStartPhoto = { takeTacho(TachoPurpose.Start) }, onFinishPhoto = { takeTacho(TachoPurpose.Finish(it)) })
                     }
                     Tab.Maintenance -> {
                         val s by vm.maintenance.collectAsStateWithLifecycle()
@@ -278,9 +303,20 @@ private fun AppRoot(vm: MainViewModel) {
         }
         DialogState.StartTrip -> {
             val t by vm.trips.collectAsStateWithLifecycle()
-            StartTripDialog(t.categories, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = vm::startTrip)
+            val tacho by vm.tacho.collectAsStateWithLifecycle()
+            // Bei neuem Foto den Dialog neu aufbauen, damit Eingaben zur neuen Aufnahme passen.
+            key(tacho?.capturedAt) {
+                StartTripDialog(t.categories, vm.lastKm(), formError, busy, onDismiss = vm::closeDialog, onSave = vm::startTrip,
+                    tacho = tacho, onRetake = { takeTacho(TachoPurpose.Start) })
+            }
         }
-        is DialogState.FinishTrip -> FinishTripDialog(d.trip, formError, busy, onDismiss = vm::closeDialog, onSave = { km, to, c -> vm.finishTrip(d.trip, km, to, c) })
+        is DialogState.FinishTrip -> {
+            val tacho by vm.tacho.collectAsStateWithLifecycle()
+            key(tacho?.capturedAt) {
+                FinishTripDialog(d.trip, formError, busy, onDismiss = vm::closeDialog, onSave = { km, to, c -> vm.finishTrip(d.trip, km, to, c) },
+                    tacho = tacho, onRetake = { takeTacho(TachoPurpose.Finish(d.trip)) })
+            }
+        }
         is DialogState.AddDocument -> AddDocumentDialog(d.file.name, formError, busy, onDismiss = vm::closeDialog, onSave = { title, type -> vm.createDocument(d.file, title, type) })
         DialogState.Logout -> ConfirmDialog(
             "Abmelden?",

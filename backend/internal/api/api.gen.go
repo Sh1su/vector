@@ -329,6 +329,27 @@ func (e CostReportGroupBy) Valid() bool {
 	}
 }
 
+// Defines values for DashboardReadingConfidence.
+const (
+	High   DashboardReadingConfidence = "high"
+	Low    DashboardReadingConfidence = "low"
+	Medium DashboardReadingConfidence = "medium"
+)
+
+// Valid indicates whether the value is a known member of the DashboardReadingConfidence enum.
+func (e DashboardReadingConfidence) Valid() bool {
+	switch e {
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DisplayUnitsConsumption.
 const (
 	KmPerL    DisplayUnitsConsumption = "km_per_l"
@@ -3080,6 +3101,38 @@ type CostReportGroupBy string
 // Currency ISO 4217
 type Currency = string
 
+// DashboardReading Aus einem Tachofoto gelesene Werte (Vorschlag, nicht gespeichert)
+type DashboardReading struct {
+	// CapturedAt Aufnahmezeit laut App, sonst Eingang beim Server
+	CapturedAt time.Time                  `json:"captured_at"`
+	Confidence DashboardReadingConfidence `json:"confidence"`
+
+	// DashboardTime angezeigte Uhrzeit HH:MM
+	DashboardTime    nullable.Nullable[string]  `json:"dashboard_time,omitempty"`
+	FileId           openapi_types.UUID         `json:"file_id"`
+	FuelLevelPercent nullable.Nullable[float64] `json:"fuel_level_percent,omitempty"`
+
+	// LastOdometer letzter bekannter Stand vor captured_at (Plausibilität)
+	LastOdometer nullable.Nullable[QuantityInput] `json:"last_odometer,omitempty"`
+	Notes        string                           `json:"notes"`
+
+	// Odometer Gesamtkilometerstand zum Vorbelegen
+	Odometer            nullable.Nullable[QuantityInput] `json:"odometer"`
+	OutsideTemperatureC nullable.Nullable[float64]       `json:"outside_temperature_c,omitempty"`
+	Range               nullable.Nullable[QuantityInput] `json:"range,omitempty"`
+
+	// Readable false, wenn kein Kombiinstrument erkennbar ist
+	Readable bool `json:"readable"`
+
+	// Summary Kurzfassung für die Notiz, z. B. „Tank 75 %, Reichweite 520 km, 18 °C“
+	Summary       string                           `json:"summary"`
+	TripMeter     nullable.Nullable[QuantityInput] `json:"trip_meter,omitempty"`
+	WarningLights []string                         `json:"warning_lights"`
+}
+
+// DashboardReadingConfidence defines model for DashboardReading.Confidence.
+type DashboardReadingConfidence string
+
 // DisplayUnits defines model for DisplayUnits.
 type DisplayUnits struct {
 	Consumption         *DisplayUnitsConsumption         `json:"consumption,omitempty"`
@@ -4697,7 +4750,10 @@ type Trip struct {
 	DriverAccountId nullable.Nullable[openapi_types.UUID] `json:"driver_account_id,omitempty"`
 	EndLocation     nullable.Nullable[string]             `json:"end_location,omitempty"`
 	EndOdometer     nullable.Nullable[QuantityInput]      `json:"end_odometer,omitempty"`
-	EndedAt         nullable.Nullable[time.Time]          `json:"ended_at,omitempty"`
+
+	// EndPhotoId Tachofoto zum Ende (Datei-ID, Rolle tacho_end)
+	EndPhotoId nullable.Nullable[openapi_types.UUID] `json:"end_photo_id,omitempty"`
+	EndedAt    nullable.Nullable[time.Time]          `json:"ended_at,omitempty"`
 
 	// GapBefore TR-04
 	GapBefore     nullable.Nullable[DisplayValue] `json:"gap_before,omitempty"`
@@ -4710,14 +4766,17 @@ type Trip struct {
 	StartLocation nullable.Nullable[string]       `json:"start_location,omitempty"`
 
 	// StartOdometer Eingabe mit Einheit (ADR-007)
-	StartOdometer QuantityInput                         `json:"start_odometer"`
-	StartedAt     time.Time                             `json:"started_at"`
-	Status        *TripStatus                           `json:"status,omitempty"`
-	SupersedesId  nullable.Nullable[openapi_types.UUID] `json:"supersedes_id,omitempty"`
-	TimeZone      string                                `json:"time_zone"`
-	UpdatedAt     *time.Time                            `json:"updated_at,omitempty"`
-	UpdatedBy     *openapi_types.UUID                   `json:"updated_by,omitempty"`
-	VehicleId     *openapi_types.UUID                   `json:"vehicle_id,omitempty"`
+	StartOdometer QuantityInput `json:"start_odometer"`
+
+	// StartPhotoId Tachofoto zum Start (Datei-ID, Verknüpfung mit Rolle tacho_start)
+	StartPhotoId nullable.Nullable[openapi_types.UUID] `json:"start_photo_id,omitempty"`
+	StartedAt    time.Time                             `json:"started_at"`
+	Status       *TripStatus                           `json:"status,omitempty"`
+	SupersedesId nullable.Nullable[openapi_types.UUID] `json:"supersedes_id,omitempty"`
+	TimeZone     string                                `json:"time_zone"`
+	UpdatedAt    *time.Time                            `json:"updated_at,omitempty"`
+	UpdatedBy    *openapi_types.UUID                   `json:"updated_by,omitempty"`
+	VehicleId    *openapi_types.UUID                   `json:"vehicle_id,omitempty"`
 
 	// Version entspricht dem ETag (ADR-012)
 	Version *int `json:"version,omitempty"`
@@ -4786,16 +4845,22 @@ type TripCreate struct {
 	DriverAccountId  nullable.Nullable[openapi_types.UUID] `json:"driver_account_id,omitempty"`
 	EndLocation      nullable.Nullable[string]             `json:"end_location,omitempty"`
 	EndOdometer      nullable.Nullable[QuantityInput]      `json:"end_odometer"`
-	EndedAt          nullable.Nullable[time.Time]          `json:"ended_at"`
-	Id               *openapi_types.UUID                   `json:"id,omitempty"`
-	Note             *string                               `json:"note,omitempty"`
-	Purpose          nullable.Nullable[string]             `json:"purpose,omitempty"`
-	StartLocation    nullable.Nullable[string]             `json:"start_location,omitempty"`
+
+	// EndPhotoId Hochgeladenes Tachofoto zum Ende
+	EndPhotoId    nullable.Nullable[openapi_types.UUID] `json:"end_photo_id,omitempty"`
+	EndedAt       nullable.Nullable[time.Time]          `json:"ended_at"`
+	Id            *openapi_types.UUID                   `json:"id,omitempty"`
+	Note          *string                               `json:"note,omitempty"`
+	Purpose       nullable.Nullable[string]             `json:"purpose,omitempty"`
+	StartLocation nullable.Nullable[string]             `json:"start_location,omitempty"`
 
 	// StartOdometer Eingabe mit Einheit (ADR-007)
 	StartOdometer QuantityInput `json:"start_odometer"`
-	StartedAt     time.Time     `json:"started_at"`
-	TimeZone      string        `json:"time_zone"`
+
+	// StartPhotoId Hochgeladenes Tachofoto zum Start (uploadFile)
+	StartPhotoId nullable.Nullable[openapi_types.UUID] `json:"start_photo_id,omitempty"`
+	StartedAt    time.Time                             `json:"started_at"`
+	TimeZone     string                                `json:"time_zone"`
 }
 
 // TripFinish defines model for TripFinish.
@@ -4809,7 +4874,13 @@ type TripFinish struct {
 
 	// EndOdometer Eingabe mit Einheit (ADR-007)
 	EndOdometer QuantityInput `json:"end_odometer"`
-	EndedAt     time.Time     `json:"ended_at"`
+
+	// EndPhotoId Hochgeladenes Tachofoto zum Ende (uploadFile)
+	EndPhotoId nullable.Nullable[openapi_types.UUID] `json:"end_photo_id,omitempty"`
+	EndedAt    time.Time                             `json:"ended_at"`
+
+	// Note ersetzt die Notiz der Fahrt (z. B. um Angaben vom Endfoto ergänzt)
+	Note *string `json:"note,omitempty"`
 }
 
 // TripOpenPatch defines model for TripOpenPatch.
@@ -4855,13 +4926,19 @@ type TripStart struct {
 	ConfirmAnomalies *[]string                             `json:"confirm_anomalies,omitempty"`
 	DriverAccountId  nullable.Nullable[openapi_types.UUID] `json:"driver_account_id,omitempty"`
 	Id               *openapi_types.UUID                   `json:"id,omitempty"`
-	Purpose          nullable.Nullable[string]             `json:"purpose,omitempty"`
-	StartLocation    nullable.Nullable[string]             `json:"start_location,omitempty"`
+
+	// Note z. B. Tankstand und Reichweite aus dem Tachofoto
+	Note          *string                   `json:"note,omitempty"`
+	Purpose       nullable.Nullable[string] `json:"purpose,omitempty"`
+	StartLocation nullable.Nullable[string] `json:"start_location,omitempty"`
 
 	// StartOdometer Eingabe mit Einheit (ADR-007)
 	StartOdometer QuantityInput `json:"start_odometer"`
-	StartedAt     time.Time     `json:"started_at"`
-	TimeZone      string        `json:"time_zone"`
+
+	// StartPhotoId Hochgeladenes Tachofoto zum Start (uploadFile)
+	StartPhotoId nullable.Nullable[openapi_types.UUID] `json:"start_photo_id,omitempty"`
+	StartedAt    time.Time                             `json:"started_at"`
+	TimeZone     string                                `json:"time_zone"`
 }
 
 // UnitCode defines model for UnitCode.
@@ -6259,6 +6336,9 @@ type ServerInterface interface {
 	// DownloadFile Datei herunterladen (bereinigte Fassung bei Bildern)
 	// (GET /vehicles/{vehicle_id}/files/{file_id}/content)
 	DownloadFile(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId)
+	// ReadDashboardPhoto Tachofoto auswerten (Kilometerstand, Tank, Reichweite …)
+	// (POST /vehicles/{vehicle_id}/files/{file_id}/dashboard-reading)
+	ReadDashboardPhoto(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId)
 	// DownloadOriginal Unverändertes Original mit EXIF (ADR-018)
 	// (GET /vehicles/{vehicle_id}/files/{file_id}/original)
 	DownloadOriginal(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId)
@@ -7036,6 +7116,12 @@ func (_ Unimplemented) GetFile(w http.ResponseWriter, r *http.Request, vehicleId
 // DownloadFile Datei herunterladen (bereinigte Fassung bei Bildern)
 // (GET /vehicles/{vehicle_id}/files/{file_id}/content)
 func (_ Unimplemented) DownloadFile(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReadDashboardPhoto Tachofoto auswerten (Kilometerstand, Tank, Reichweite …)
+// (POST /vehicles/{vehicle_id}/files/{file_id}/dashboard-reading)
+func (_ Unimplemented) ReadDashboardPhoto(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10495,6 +10581,41 @@ func (siw *ServerInterfaceWrapper) DownloadFile(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DownloadFile(w, r, vehicleId, fileId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReadDashboardPhoto operation middleware
+func (siw *ServerInterfaceWrapper) ReadDashboardPhoto(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "vehicle_id" -------------
+	var vehicleId VehicleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vehicle_id", chi.URLParam(r, "vehicle_id"), &vehicleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "vehicle_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "file_id" -------------
+	var fileId FileId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "file_id", chi.URLParam(r, "file_id"), &fileId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "file_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadDashboardPhoto(w, r, vehicleId, fileId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14400,6 +14521,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/vehicles/{vehicle_id}/files", wrapper.UploadFile)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/vehicles/{vehicle_id}/files/{file_id}/dashboard-reading", wrapper.ReadDashboardPhoto)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/vehicles/{vehicle_id}/files/{file_id}", wrapper.DeleteFile)
@@ -24927,6 +25051,156 @@ func (response DownloadFile429ApplicationProblemPlusJSONResponse) VisitDownloadF
 	return err
 }
 
+type ReadDashboardPhotoRequestObject struct {
+	VehicleId VehicleId `json:"vehicle_id"`
+	FileId    FileId    `json:"file_id"`
+}
+
+type ReadDashboardPhotoResponseObject interface {
+	VisitReadDashboardPhotoResponse(w http.ResponseWriter) error
+}
+
+type ReadDashboardPhoto200JSONResponse DashboardReading
+
+func (response ReadDashboardPhoto200JSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto401ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto403ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto404ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto409ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto422ApplicationProblemPlusJSONResponse struct {
+	UnprocessableApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto422ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ReadDashboardPhoto429ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto502ApplicationProblemPlusJSONResponse Problem
+
+func (response ReadDashboardPhoto502ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadDashboardPhoto503ApplicationProblemPlusJSONResponse Problem
+
+func (response ReadDashboardPhoto503ApplicationProblemPlusJSONResponse) VisitReadDashboardPhotoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DownloadOriginalRequestObject struct {
 	VehicleId VehicleId `json:"vehicle_id"`
 	FileId    FileId    `json:"file_id"`
@@ -34615,6 +34889,9 @@ type StrictServerInterface interface {
 	// DownloadFile Datei herunterladen (bereinigte Fassung bei Bildern)
 	// (GET /vehicles/{vehicle_id}/files/{file_id}/content)
 	DownloadFile(ctx context.Context, request DownloadFileRequestObject) (DownloadFileResponseObject, error)
+	// ReadDashboardPhoto Tachofoto auswerten (Kilometerstand, Tank, Reichweite …)
+	// (POST /vehicles/{vehicle_id}/files/{file_id}/dashboard-reading)
+	ReadDashboardPhoto(ctx context.Context, request ReadDashboardPhotoRequestObject) (ReadDashboardPhotoResponseObject, error)
 	// DownloadOriginal Unverändertes Original mit EXIF (ADR-018)
 	// (GET /vehicles/{vehicle_id}/files/{file_id}/original)
 	DownloadOriginal(ctx context.Context, request DownloadOriginalRequestObject) (DownloadOriginalResponseObject, error)
@@ -37496,6 +37773,33 @@ func (sh *strictHandler) DownloadFile(w http.ResponseWriter, r *http.Request, ve
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DownloadFileResponseObject); ok {
 		if err := validResponse.VisitDownloadFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReadDashboardPhoto operation middleware
+func (sh *strictHandler) ReadDashboardPhoto(w http.ResponseWriter, r *http.Request, vehicleId VehicleId, fileId FileId) {
+	var request ReadDashboardPhotoRequestObject
+
+	request.VehicleId = vehicleId
+	request.FileId = fileId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReadDashboardPhoto(ctx, request.(ReadDashboardPhotoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReadDashboardPhoto")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReadDashboardPhotoResponseObject); ok {
+		if err := validResponse.VisitReadDashboardPhotoResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

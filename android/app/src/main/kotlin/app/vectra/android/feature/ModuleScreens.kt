@@ -185,7 +185,8 @@ fun CostsScreen(state: CostsState, onConfirm: (CostOccurrence) -> Unit, onAdd: (
 
 /** Fahrten: laufende Fahrt beenden oder neue starten, Liste mit Strecke und Lücken, Monatssumme. */
 @Composable
-fun TripsScreen(state: TripsState, onStart: () -> Unit, onFinish: (Trip) -> Unit, onRefresh: () -> Unit) {
+fun TripsScreen(state: TripsState, onStart: () -> Unit, onFinish: (Trip) -> Unit, onRefresh: () -> Unit,
+    onStartPhoto: (() -> Unit)? = null, onFinishPhoto: ((Trip) -> Unit)? = null) {
     val c = V.colors
     val v = state.vehicle
     val open = state.open
@@ -199,13 +200,21 @@ fun TripsScreen(state: TripsState, onStart: () -> Unit, onFinish: (Trip) -> Unit
                     if (open != null) {
                         Text("Fahrt läuft seit " + Format.dateTime(open.startedAt, open.timeZone), style = VType.hero, color = Brand.onNavy)
                         Text("Start bei " + Format.number(open.startOdometer.value, 0) + " " + open.startOdometer.unit + (cats[open.categoryId]?.let { " · " + it.name } ?: ""), style = VType.small, color = Brand.onNavyMuted)
-                        if (v?.canEdit == true) VButton("Fahrt beenden", { onFinish(open) }, Modifier.fillMaxWidth(), icon = VIcons.check)
+                        if (v?.canEdit == true) {
+                            if (onFinishPhoto != null) VButton("Tacho fotografieren & beenden", { onFinishPhoto(open) }, Modifier.fillMaxWidth(), icon = VIcons.camera)
+                            VButton(if (onFinishPhoto != null) "Ohne Foto beenden" else "Fahrt beenden", { onFinish(open) }, Modifier.fillMaxWidth(),
+                                kind = if (onFinishPhoto != null) ButtonKind.Outline else ButtonKind.Accent, icon = VIcons.check)
+                        }
                     } else {
                         Text("Im ${state.monthLabel}: " + (state.report?.total?.let { Format.number(it.value, 0) + " " + it.unit } ?: "–"), style = VType.hero, color = Brand.onNavy)
                         state.report?.byCategory?.take(3)?.forEach { s ->
                             Text("${s.label ?: s.key}: ${Format.number(s.distance.value, 0)} ${s.distance.unit} · ${Format.number(s.sharePct, 0)} %", style = VType.small, color = Brand.onNavyMuted)
                         }
-                        if (v?.canEdit == true) VButton("Fahrt starten", onStart, Modifier.fillMaxWidth(), icon = VIcons.play)
+                        if (v?.canEdit == true) {
+                            if (onStartPhoto != null) VButton("Tacho fotografieren & starten", onStartPhoto, Modifier.fillMaxWidth(), icon = VIcons.camera)
+                            VButton(if (onStartPhoto != null) "Ohne Foto starten" else "Fahrt starten", onStart, Modifier.fillMaxWidth(),
+                                kind = if (onStartPhoto != null) ButtonKind.Outline else ButtonKind.Accent, icon = VIcons.play)
+                        }
                     }
                 }
             }
@@ -216,7 +225,9 @@ fun TripsScreen(state: TripsState, onStart: () -> Unit, onFinish: (Trip) -> Unit
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     t.gapBefore?.let { Note(NoteKind.Warn, Format.number(it.value, 0) + " ${it.unit} nicht als Fahrt erfasst") }
                     val title = listOfNotNull(t.startLocation, t.endLocation).joinToString(" → ").ifBlank { t.purpose ?: "Fahrt" }
-                    val meta = Format.dateTime(t.startedAt, t.timeZone) + (cats[t.categoryId]?.let { " · " + it.name } ?: "") + if (t.status == "open") " · läuft" else ""
+                    val photos = listOfNotNull(t.startPhotoId?.let { "Start" }, t.endPhotoId?.let { "Ende" })
+                    val meta = Format.dateTime(t.startedAt, t.timeZone) + (cats[t.categoryId]?.let { " · " + it.name } ?: "") + (if (t.status == "open") " · läuft" else "") +
+                        (if (photos.isNotEmpty()) " · Tachofoto " + photos.joinToString(" + ") else "")
                     ListRow(VIcons.route, title, meta, t.distance?.let { Format.number(it.value, 1) + " " + it.unit } ?: "–")
                 }
             }

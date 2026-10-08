@@ -14,6 +14,14 @@ import app.vectra.android.feature.FormError
 import app.vectra.android.feature.Freshness
 import app.vectra.android.feature.MaintenanceState
 import app.vectra.android.feature.TripsState
+import app.vectra.android.feature.TachoCapture
+import app.vectra.android.feature.TachoPhase
+import app.vectra.android.feature.TachoPurpose
+import app.vectra.android.data.TachoImage
+import app.vectra.core.model.DashboardReading
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import app.vectra.android.feature.HomeState
 import app.vectra.android.feature.LoginState
 import app.vectra.android.feature.MonthBar
@@ -122,6 +130,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val formError = MutableStateFlow<FormError?>(null)
     val busy = MutableStateFlow(false)
     var pickPurpose: PickPurpose = PickPurpose.Document
+    /** Tachofoto zur Fahrt (Start/Ende); null ohne Foto. */
+    val tacho = MutableStateFlow<TachoCapture?>(null)
+    /** Wofür die Kamera gerade geöffnet ist. */
+    var pendingTacho: TachoPurpose? = null
     private val photoCache = HashMap<String, ImageBitmap>()
     private val thumbCache = HashMap<String, ImageBitmap>()
     val pending: StateFlow<List<OutboxEntry>> = c.outboxStore.observe().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -389,11 +401,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openDialog(d: DialogState) {
         formError.value = null
+        tacho.value = null
         dialog.value = d
     }
 
     fun closeDialog() {
         formError.value = null
+        tacho.value = null
         dialog.value = null
     }
 
@@ -408,6 +422,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 block(repo, v)
                 dialog.value = null
+                tacho.value = null
                 refresh()
             } catch (e: ApiException) {
                 formError.value = FormError(problemText(e), e.problem?.anomalies.orEmpty())
@@ -448,13 +463,80 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun confirmOccurrence(o: CostOccurrence) = submit { repo, v -> repo.api.confirmOccurrence(v.id, o.planId, o.dueOn) }
 
+    // Mit Tachofoto gelten Aufnahmezeit und Foto als Start bzw. Ende der Fahrt; Tank, Reichweite
+    // und Temperatur aus dem Foto landen in der Notiz.
     fun startTrip(km: Double, categoryId: String, purpose: String?, from: String?, confirm: Confirmation?) = submit { repo, v ->
-        repo.api.startTrip(v.id, TripStart(UuidV7.generate(), Instant.now().toString(), ZoneId.systemDefault().id, QuantityInput(km, "km"), categoryId, purpose, from,
-            confirm?.codes, confirm?.reason))
+        val t = tacho.value?.takeIf { it.purpose == TachoPurpose.Start }
+        repo.api.startTrip(v.id, TripStart(UuidV7.generate(), (t?.capturedAt ?: Instant.now()).toString(), ZoneId.systemDefault().id, QuantityInput(km, "km"),
+            categoryId, purpose, from, confirm?.codes, confirm?.reason, startPhotoId = t?.fileId,
+            note = t?.reading?.summary?.takeIf { it.isNotBlank() }?.let { "Start: $it" }))
     }
 
     fun finishTrip(trip: Trip, km: Double, to: String?, confirm: Confirmation?) = submit { repo, v ->
-        repo.api.finishTrip(v.id, trip, TripFinish(Instant.now().toString(), QuantityInput(km, "km"), to, confirm?.codes, confirm?.reason))
+        val t = tacho.value?.takeIf { (it.purpose as? TachoPurpose.Finish)?.trip?.id == trip.id }
+        val note = t?.reading?.summary?.takeIf { it.isNotBlank() }?.let { s -> listOf(trip.note, "Ende: $s").filter { it.isNotBlank() }.joinToString("\n") }
+        repo.api.finishTrip(v.id, trip, TripFinish((t?.capturedAt ?: Instant.now()).toString(), QuantityInput(km, "km"), to, confirm?.codes, confirm?.reason,
+            endPhotoId = t?.fileId, note = note))
+    }
+
+    /** Ergebnis der Kamera-App: Foto aufbereiten, Dialog öffnen, hochladen und auswerten lassen. */
+    fun onTachoFile(ok: Boolean, file: File?) {
+        val purpose = pendingTacho
+        pendingTacho = null
+        if (!ok || file == null || purpose == null) {
+            file?.delete()
+            return
+        }
+        val at = Instant.now()
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.Default) { TachoImage.prepare(file) }
+            if (bytes == null) {
+                notice.value = "Das Foto konnte nicht gelesen werden."
+                return@launch
+            }
+            onTachoPhoto(purpose, bytes, at)
+        }
+    }
+
+    private fun onTachoPhoto(purpose: TachoPurpose, bytes: ByteArray, at: Instant) {
+        val repo = c.repository() ?: return
+        val v = home.value.vehicle ?: return
+        formError.value = null
+        tacho.value = TachoCapture(purpose, at, decode(bytes))
+        dialog.value = when (purpose) {
+            TachoPurpose.Start -> DialogState.StartTrip
+            is TachoPurpose.Finish -> DialogState.FinishTrip(purpose.trip)
+        }
+        // Nur den Zustand dieser Aufnahme ändern (der Dialog kann inzwischen zu sein).
+        fun upd(f: (TachoCapture) -> TachoCapture) = tacho.update { cur -> if (cur?.capturedAt == at) f(cur) else cur }
+        viewModelScope.launch {
+            val name = "tacho-" + (if (purpose == TachoPurpose.Start) "start" else "ende") + ".jpg"
+            val meta = try {
+                repo.api.upload(v.id, name, "image/jpeg", bytes, "camera", at)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                upd { it.copy(phase = TachoPhase.Failed, message = "Foto nicht hochgeladen (${message(e)}). Bitte den Stand ablesen und eintragen.") }
+                return@launch
+            }
+            upd { it.copy(phase = TachoPhase.Reading, fileId = meta.id) }
+            try {
+                val r = repo.api.readDashboard(v.id, meta.id)
+                upd { it.copy(phase = if (r.odometer != null) TachoPhase.Ready else TachoPhase.Manual, reading = r, message = readingHint(r)) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                upd { it.copy(phase = TachoPhase.Manual, message = problemText(e)) }
+            } catch (e: Exception) {
+                upd { it.copy(phase = TachoPhase.Manual, message = "Auswertung nicht möglich (${message(e)}). Das Foto wird trotzdem gespeichert.") }
+            }
+        }
+    }
+
+    private fun readingHint(r: DashboardReading): String? = when {
+        !r.readable || r.odometer == null -> listOf("Kilometerstand nicht erkannt – bitte von Hand eintragen.", r.notes).filter { it.isNotBlank() }.joinToString(" ")
+        r.confidence != "high" -> listOf("Bitte die Ziffern mit dem Foto vergleichen.", r.notes).filter { it.isNotBlank() }.joinToString(" ")
+        else -> r.notes.ifBlank { null }
     }
 
     /** Nach der Dateiauswahl: Fahrzeugfoto direkt hochladen, Dokumente erst nach Titel und Typ. */
