@@ -65,6 +65,12 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// Room schreibt und liest schemas/…/1.json; laufen Debug- und Release-KSP parallel, liest einer
+// eine halb geschriebene Datei („Empty schema file“). Deshalb nacheinander.
+tasks.configureEach {
+    if (name == "kspReleaseKotlin") mustRunAfter("kspDebugKotlin")
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(libs.androidx.core.ktx)
